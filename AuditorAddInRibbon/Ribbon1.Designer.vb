@@ -44,36 +44,16 @@
         Dim resources As System.ComponentModel.ComponentResourceManager = New System.ComponentModel.ComponentResourceManager(GetType(Ribbon1))
         Me.Tab1 = Me.Factory.CreateRibbonTab
         Me.Group10 = Me.Factory.CreateRibbonGroup
-        Me.Group2 = Me.Factory.CreateRibbonGroup
-        Me.Separator2 = Me.Factory.CreateRibbonSeparator
-        Me.Group9 = Me.Factory.CreateRibbonGroup
-        Me.Group8 = Me.Factory.CreateRibbonGroup
-        Me.Group17 = Me.Factory.CreateRibbonGroup
-        Me.Roman_numerals = Me.Factory.CreateRibbonGroup
-        Me.Group7 = Me.Factory.CreateRibbonGroup
-        Me.Group15 = Me.Factory.CreateRibbonGroup
-        Me.Group3 = Me.Factory.CreateRibbonGroup
-        Me.Separator1 = Me.Factory.CreateRibbonSeparator
-        Me.Group18 = Me.Factory.CreateRibbonGroup
-        Me.Group14 = Me.Factory.CreateRibbonGroup
-        Me.Group12 = Me.Factory.CreateRibbonGroup
-        Me.Group16 = Me.Factory.CreateRibbonGroup
-        Me.Group6 = Me.Factory.CreateRibbonGroup
-        Me.Group4 = Me.Factory.CreateRibbonGroup
-        Me.Group5 = Me.Factory.CreateRibbonGroup
-        Me.Group11 = Me.Factory.CreateRibbonGroup
-        Me.Group1 = Me.Factory.CreateRibbonGroup
-        Me.Group13 = Me.Factory.CreateRibbonGroup
         Me.PBC = Me.Factory.CreateRibbonButton
+        Me.Group2 = Me.Factory.CreateRibbonGroup
         Me.FontName1 = Me.Factory.CreateRibbonButton
         Me.FontName2 = Me.Factory.CreateRibbonButton
         Me.PMingLiU = Me.Factory.CreateRibbonButton
+        Me.Separator2 = Me.Factory.CreateRibbonSeparator
         Me.Arial = Me.Factory.CreateRibbonButton
         Me.BookAntiqua = Me.Factory.CreateRibbonButton
         Me.Calibri = Me.Factory.CreateRibbonButton
-        Me.HyperLink = Me.Factory.CreateRibbonButton
-        Me.hyperlinkCell = Me.Factory.CreateRibbonButton
-        Me.InsertColumn = Me.Factory.CreateRibbonButton
+        Me.Group9 = Me.Factory.CreateRibbonGroup
         Me.CapP = Me.Factory.CreateRibbonButton
         Me.AJE = Me.Factory.CreateRibbonButton
         Me.RJE = Me.Factory.CreateRibbonButton
@@ -89,6 +69,7 @@
         Me.Button1 = Me.Factory.CreateRibbonButton
         Me.Minor_Pass = Me.Factory.CreateRibbonButton
         Me.Conclusion = Me.Factory.CreateRibbonButton
+        Me.Group8 = Me.Factory.CreateRibbonGroup
         Me.star1 = Me.Factory.CreateRibbonButton
         Me.tri1 = Me.Factory.CreateRibbonButton
         Me.dia1 = Me.Factory.CreateRibbonButton
@@ -101,6 +82,7 @@
         Me.squ2 = Me.Factory.CreateRibbonButton
         Me.dia2 = Me.Factory.CreateRibbonButton
         Me.divided = Me.Factory.CreateRibbonButton
+        Me.Group17 = Me.Factory.CreateRibbonGroup
         Me.alpha = Me.Factory.CreateRibbonButton
         Me.beta = Me.Factory.CreateRibbonButton
         Me.gamma = Me.Factory.CreateRibbonButton
@@ -117,6 +99,7 @@
         Me.phi = Me.Factory.CreateRibbonButton
         Me.psi = Me.Factory.CreateRibbonButton
         Me.omega = Me.Factory.CreateRibbonButton
+        Me.Roman_numerals = Me.Factory.CreateRibbonGroup
         Me.one = Me.Factory.CreateRibbonButton
         Me.two = Me.Factory.CreateRibbonButton
         Me.three = Me.Factory.CreateRibbonButton
@@ -128,53 +111,70 @@
         Me.eight = Me.Factory.CreateRibbonButton
         Me.nine = Me.Factory.CreateRibbonButton
         Me.ten = Me.Factory.CreateRibbonButton
+        Me.Group7 = Me.Factory.CreateRibbonGroup
         Me.a = Me.Factory.CreateRibbonButton
         Me.b = Me.Factory.CreateRibbonButton
         Me.c = Me.Factory.CreateRibbonButton
         Me.siga = Me.Factory.CreateRibbonButton
         Me.sigb = Me.Factory.CreateRibbonButton
         Me.sigc = Me.Factory.CreateRibbonButton
+        Me.Group15 = Me.Factory.CreateRibbonGroup
         Me.DownApply = Me.Factory.CreateRibbonButton
         Me.RightApply = Me.Factory.CreateRibbonButton
         Me.ArrowBox = Me.Factory.CreateRibbonButton
         Me.MultiIllu = Me.Factory.CreateRibbonButton
+        Me.Group18 = Me.Factory.CreateRibbonGroup
         Me.ColorYellow = Me.Factory.CreateRibbonButton
         Me.ColorAqua = Me.Factory.CreateRibbonButton
         Me.ColorLime = Me.Factory.CreateRibbonButton
         Me.ColorSilver = Me.Factory.CreateRibbonButton
         Me.ColorFuchsia = Me.Factory.CreateRibbonButton
         Me.ColorWhite = Me.Factory.CreateRibbonButton
+        Me.Group14 = Me.Factory.CreateRibbonGroup
         Me.SheetArrow = Me.Factory.CreateRibbonButton
         Me.Direction1 = Me.Factory.CreateRibbonButton
         Me.Direction2 = Me.Factory.CreateRibbonButton
         Me.Direction3 = Me.Factory.CreateRibbonButton
         Me.Direction4 = Me.Factory.CreateRibbonButton
         Me.Direction5 = Me.Factory.CreateRibbonButton
+        Me.Group12 = Me.Factory.CreateRibbonGroup
         Me.Note = Me.Factory.CreateRibbonButton
         Me.Note1 = Me.Factory.CreateRibbonButton
         Me.Note2 = Me.Factory.CreateRibbonButton
         Me.Note3 = Me.Factory.CreateRibbonButton
         Me.Note4 = Me.Factory.CreateRibbonButton
         Me.Note5 = Me.Factory.CreateRibbonButton
+        Me.Group16 = Me.Factory.CreateRibbonGroup
         Me.LeftBrace = Me.Factory.CreateRibbonButton
+        Me.InsertColumn = Me.Factory.CreateRibbonButton
+        Me.Group6 = Me.Factory.CreateRibbonGroup
+        Me.HyperLink = Me.Factory.CreateRibbonButton
+        Me.hyperlinkCell = Me.Factory.CreateRibbonButton
+        Me.Group4 = Me.Factory.CreateRibbonGroup
+        Me.Menu5 = Me.Factory.CreateRibbonMenu
         Me.Preparer2 = Me.Factory.CreateRibbonButton
         Me.Reviewer2 = Me.Factory.CreateRibbonButton
+        Me.Group5 = Me.Factory.CreateRibbonGroup
         Me.RedPen = Me.Factory.CreateRibbonButton
         Me.BluePen = Me.Factory.CreateRibbonButton
         Me.BlackPen = Me.Factory.CreateRibbonButton
+        Me.Group3 = Me.Factory.CreateRibbonGroup
         Me.Calendar_ToggleButton = Me.Factory.CreateRibbonToggleButton
         Me.CheckBox = Me.Factory.CreateRibbonButton
         Me.ClearCheckBox = Me.Factory.CreateRibbonButton
+        Me.Separator1 = Me.Factory.CreateRibbonSeparator
         Me.RedArrow = Me.Factory.CreateRibbonButton
         Me.DoubleLine = Me.Factory.CreateRibbonButton
         Me.CommaStyle = Me.Factory.CreateRibbonButton
+        Me.Group11 = Me.Factory.CreateRibbonGroup
         Me.Menu1 = Me.Factory.CreateRibbonMenu
         Me.ClearHyperLink = Me.Factory.CreateRibbonButton
         Me.ClearPen = Me.Factory.CreateRibbonButton
         Me.ClearAllShape = Me.Factory.CreateRibbonButton
+        Me.Group1 = Me.Factory.CreateRibbonGroup
         Me.Quote = Me.Factory.CreateRibbonButton
+        Me.Group13 = Me.Factory.CreateRibbonGroup
         Me.Copyright_ToggleButton = Me.Factory.CreateRibbonToggleButton
-        Me.Menu5 = Me.Factory.CreateRibbonMenu
         Me.Tab1.SuspendLayout()
         Me.Group10.SuspendLayout()
         Me.Group2.SuspendLayout()
@@ -184,7 +184,6 @@
         Me.Roman_numerals.SuspendLayout()
         Me.Group7.SuspendLayout()
         Me.Group15.SuspendLayout()
-        Me.Group3.SuspendLayout()
         Me.Group18.SuspendLayout()
         Me.Group14.SuspendLayout()
         Me.Group12.SuspendLayout()
@@ -192,6 +191,7 @@
         Me.Group6.SuspendLayout()
         Me.Group4.SuspendLayout()
         Me.Group5.SuspendLayout()
+        Me.Group3.SuspendLayout()
         Me.Group11.SuspendLayout()
         Me.Group1.SuspendLayout()
         Me.Group13.SuspendLayout()
@@ -227,6 +227,16 @@
         Me.Group10.Label = "PBC"
         Me.Group10.Name = "Group10"
         '
+        'PBC
+        '
+        Me.PBC.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
+        Me.PBC.Image = CType(resources.GetObject("PBC.Image"), System.Drawing.Image)
+        Me.PBC.Label = "PBC"
+        Me.PBC.Name = "PBC"
+        Me.PBC.OfficeImageId = "P"
+        Me.PBC.ScreenTip = "Prepared by client"
+        Me.PBC.ShowImage = True
+        '
         'Group2
         '
         Me.Group2.Items.Add(Me.FontName1)
@@ -238,188 +248,6 @@
         Me.Group2.Items.Add(Me.Calibri)
         Me.Group2.Label = "Font Name"
         Me.Group2.Name = "Group2"
-        '
-        'Separator2
-        '
-        Me.Separator2.Name = "Separator2"
-        '
-        'Group9
-        '
-        Me.Group9.Items.Add(Me.CapP)
-        Me.Group9.Items.Add(Me.AJE)
-        Me.Group9.Items.Add(Me.RJE)
-        Me.Group9.Items.Add(Me.footed)
-        Me.Group9.Items.Add(Me.btnCB)
-        Me.Group9.Items.Add(Me.RD)
-        Me.Group9.Items.Add(Me.TB)
-        Me.Group9.Items.Add(Me.FS)
-        Me.Group9.Items.Add(Me.NotMaterial)
-        Me.Group9.Items.Add(Me.tick)
-        Me.Group9.Items.Add(Me.Tick2)
-        Me.Group9.Items.Add(Me.Tick3)
-        Me.Group9.Items.Add(Me.Button1)
-        Me.Group9.Items.Add(Me.Minor_Pass)
-        Me.Group9.Items.Add(Me.Conclusion)
-        Me.Group9.Label = "EWP"
-        Me.Group9.Name = "Group9"
-        '
-        'Group8
-        '
-        Me.Group8.Items.Add(Me.star1)
-        Me.Group8.Items.Add(Me.tri1)
-        Me.Group8.Items.Add(Me.dia1)
-        Me.Group8.Items.Add(Me.star2)
-        Me.Group8.Items.Add(Me.tri2)
-        Me.Group8.Items.Add(Me.Menu3)
-        Me.Group8.Label = "Symbol"
-        Me.Group8.Name = "Group8"
-        '
-        'Group17
-        '
-        Me.Group17.Items.Add(Me.alpha)
-        Me.Group17.Items.Add(Me.beta)
-        Me.Group17.Items.Add(Me.gamma)
-        Me.Group17.Items.Add(Me.delta)
-        Me.Group17.Items.Add(Me.epsilon)
-        Me.Group17.Items.Add(Me.Menu2)
-        Me.Group17.Label = "Greek Alphabet"
-        Me.Group17.Name = "Group17"
-        '
-        'Roman_numerals
-        '
-        Me.Roman_numerals.Items.Add(Me.one)
-        Me.Roman_numerals.Items.Add(Me.two)
-        Me.Roman_numerals.Items.Add(Me.three)
-        Me.Roman_numerals.Items.Add(Me.four)
-        Me.Roman_numerals.Items.Add(Me.five)
-        Me.Roman_numerals.Items.Add(Me.Menu4)
-        Me.Roman_numerals.Label = "Roman Numerals"
-        Me.Roman_numerals.Name = "Roman_numerals"
-        '
-        'Group7
-        '
-        Me.Group7.Items.Add(Me.a)
-        Me.Group7.Items.Add(Me.b)
-        Me.Group7.Items.Add(Me.c)
-        Me.Group7.Items.Add(Me.siga)
-        Me.Group7.Items.Add(Me.sigb)
-        Me.Group7.Items.Add(Me.sigc)
-        Me.Group7.Label = "Sum a b c"
-        Me.Group7.Name = "Group7"
-        '
-        'Group15
-        '
-        Me.Group15.Items.Add(Me.DownApply)
-        Me.Group15.Items.Add(Me.RightApply)
-        Me.Group15.Items.Add(Me.ArrowBox)
-        Me.Group15.Items.Add(Me.MultiIllu)
-        Me.Group15.Label = "Arrow"
-        Me.Group15.Name = "Group15"
-        '
-        'Group3
-        '
-        Me.Group3.Items.Add(Me.Calendar_ToggleButton)
-        Me.Group3.Items.Add(Me.CheckBox)
-        Me.Group3.Items.Add(Me.ClearCheckBox)
-        Me.Group3.Items.Add(Me.Separator1)
-        Me.Group3.Items.Add(Me.RedArrow)
-        Me.Group3.Items.Add(Me.DoubleLine)
-        Me.Group3.Items.Add(Me.CommaStyle)
-        Me.Group3.Label = "Others"
-        Me.Group3.Name = "Group3"
-        '
-        'Separator1
-        '
-        Me.Separator1.Name = "Separator1"
-        '
-        'Group18
-        '
-        Me.Group18.Items.Add(Me.ColorYellow)
-        Me.Group18.Items.Add(Me.ColorAqua)
-        Me.Group18.Items.Add(Me.ColorLime)
-        Me.Group18.Items.Add(Me.ColorSilver)
-        Me.Group18.Items.Add(Me.ColorFuchsia)
-        Me.Group18.Items.Add(Me.ColorWhite)
-        Me.Group18.Label = "Fill Color"
-        Me.Group18.Name = "Group18"
-        '
-        'Group14
-        '
-        Me.Group14.Items.Add(Me.SheetArrow)
-        Me.Group14.Items.Add(Me.Direction1)
-        Me.Group14.Items.Add(Me.Direction2)
-        Me.Group14.Items.Add(Me.Direction3)
-        Me.Group14.Items.Add(Me.Direction4)
-        Me.Group14.Items.Add(Me.Direction5)
-        Me.Group14.Label = "Direction"
-        Me.Group14.Name = "Group14"
-        '
-        'Group12
-        '
-        Me.Group12.Items.Add(Me.Note)
-        Me.Group12.Items.Add(Me.Note1)
-        Me.Group12.Items.Add(Me.Note2)
-        Me.Group12.Items.Add(Me.Note3)
-        Me.Group12.Items.Add(Me.Note4)
-        Me.Group12.Items.Add(Me.Note5)
-        Me.Group12.Label = "Note"
-        Me.Group12.Name = "Group12"
-        '
-        'Group16
-        '
-        Me.Group16.Items.Add(Me.LeftBrace)
-        Me.Group16.Items.Add(Me.InsertColumn)
-        Me.Group16.Label = "Insert"
-        Me.Group16.Name = "Group16"
-        '
-        'Group6
-        '
-        Me.Group6.Items.Add(Me.HyperLink)
-        Me.Group6.Items.Add(Me.hyperlinkCell)
-        Me.Group6.Label = "HyperLink"
-        Me.Group6.Name = "Group6"
-        '
-        'Group4
-        '
-        Me.Group4.Items.Add(Me.Menu5)
-        Me.Group4.Label = "Signature"
-        Me.Group4.Name = "Group4"
-        '
-        'Group5
-        '
-        Me.Group5.Items.Add(Me.RedPen)
-        Me.Group5.Items.Add(Me.BluePen)
-        Me.Group5.Items.Add(Me.BlackPen)
-        Me.Group5.Label = "Marker"
-        Me.Group5.Name = "Group5"
-        '
-        'Group11
-        '
-        Me.Group11.Items.Add(Me.Menu1)
-        Me.Group11.Label = "Be Careful"
-        Me.Group11.Name = "Group11"
-        '
-        'Group1
-        '
-        Me.Group1.Items.Add(Me.Quote)
-        Me.Group1.Label = "Get Motivated"
-        Me.Group1.Name = "Group1"
-        '
-        'Group13
-        '
-        Me.Group13.Items.Add(Me.Copyright_ToggleButton)
-        Me.Group13.Label = "License"
-        Me.Group13.Name = "Group13"
-        '
-        'PBC
-        '
-        Me.PBC.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
-        Me.PBC.Image = CType(resources.GetObject("PBC.Image"), System.Drawing.Image)
-        Me.PBC.Label = "PBC"
-        Me.PBC.Name = "PBC"
-        Me.PBC.OfficeImageId = "P"
-        Me.PBC.ScreenTip = "Prepared by client"
-        Me.PBC.ShowImage = True
         '
         'FontName1
         '
@@ -449,6 +277,10 @@
         Me.PMingLiU.ShowImage = True
         Me.PMingLiU.ShowLabel = False
         '
+        'Separator2
+        '
+        Me.Separator2.Name = "Separator2"
+        '
         'Arial
         '
         Me.Arial.Image = CType(resources.GetObject("Arial.Image"), System.Drawing.Image)
@@ -476,42 +308,32 @@
         Me.Calibri.ShowImage = True
         Me.Calibri.ShowLabel = False
         '
-        'HyperLink
+        'Group9
         '
-        Me.HyperLink.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
-        Me.HyperLink.Label = "Cell Link"
-        Me.HyperLink.Name = "HyperLink"
-        Me.HyperLink.OfficeImageId = "AccessRelinkLists"
-        Me.HyperLink.ScreenTip = "Cell Link"
-        Me.HyperLink.ShowImage = True
-        Me.HyperLink.SuperTip = "Create boxes linked with hyperlinks to the lower right of both of the selected ce" &
-    "lls."
-        '
-        'hyperlinkCell
-        '
-        Me.hyperlinkCell.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
-        Me.hyperlinkCell.Label = "Hyperlink"
-        Me.hyperlinkCell.Name = "hyperlinkCell"
-        Me.hyperlinkCell.OfficeImageId = "BuildHyperlink"
-        Me.hyperlinkCell.ScreenTip = "Build Hyperlink"
-        Me.hyperlinkCell.ShowImage = True
-        Me.hyperlinkCell.SuperTip = "Build hyperlinks on both of the selected cells ."
-        '
-        'InsertColumn
-        '
-        Me.InsertColumn.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
-        Me.InsertColumn.Label = "Insert Column"
-        Me.InsertColumn.Name = "InsertColumn"
-        Me.InsertColumn.OfficeImageId = "AddNewColumnMenu"
-        Me.InsertColumn.ScreenTip = "Insert a narrow column "
-        Me.InsertColumn.ShowImage = True
+        Me.Group9.Items.Add(Me.CapP)
+        Me.Group9.Items.Add(Me.AJE)
+        Me.Group9.Items.Add(Me.RJE)
+        Me.Group9.Items.Add(Me.footed)
+        Me.Group9.Items.Add(Me.btnCB)
+        Me.Group9.Items.Add(Me.RD)
+        Me.Group9.Items.Add(Me.TB)
+        Me.Group9.Items.Add(Me.FS)
+        Me.Group9.Items.Add(Me.NotMaterial)
+        Me.Group9.Items.Add(Me.tick)
+        Me.Group9.Items.Add(Me.Tick2)
+        Me.Group9.Items.Add(Me.Tick3)
+        Me.Group9.Items.Add(Me.Button1)
+        Me.Group9.Items.Add(Me.Minor_Pass)
+        Me.Group9.Items.Add(Me.Conclusion)
+        Me.Group9.Label = "Work Paper"
+        Me.Group9.Name = "Group9"
         '
         'CapP
         '
         Me.CapP.Image = CType(resources.GetObject("CapP.Image"), System.Drawing.Image)
         Me.CapP.Label = "P"
         Me.CapP.Name = "CapP"
-        Me.CapP.ScreenTip = "Agree to prior"
+        Me.CapP.ScreenTip = "Conferido com o período anterior"
         Me.CapP.ShowImage = True
         Me.CapP.ShowLabel = False
         '
@@ -640,6 +462,17 @@
         Me.Conclusion.ShowImage = True
         Me.Conclusion.ShowLabel = False
         '
+        'Group8
+        '
+        Me.Group8.Items.Add(Me.star1)
+        Me.Group8.Items.Add(Me.tri1)
+        Me.Group8.Items.Add(Me.dia1)
+        Me.Group8.Items.Add(Me.star2)
+        Me.Group8.Items.Add(Me.tri2)
+        Me.Group8.Items.Add(Me.Menu3)
+        Me.Group8.Label = "Symbol"
+        Me.Group8.Name = "Group8"
+        '
         'star1
         '
         Me.star1.Image = CType(resources.GetObject("star1.Image"), System.Drawing.Image)
@@ -741,6 +574,17 @@
         Me.divided.Name = "divided"
         Me.divided.ShowImage = True
         Me.divided.ShowLabel = False
+        '
+        'Group17
+        '
+        Me.Group17.Items.Add(Me.alpha)
+        Me.Group17.Items.Add(Me.beta)
+        Me.Group17.Items.Add(Me.gamma)
+        Me.Group17.Items.Add(Me.delta)
+        Me.Group17.Items.Add(Me.epsilon)
+        Me.Group17.Items.Add(Me.Menu2)
+        Me.Group17.Label = "Greek Alphabet"
+        Me.Group17.Name = "Group17"
         '
         'alpha
         '
@@ -886,6 +730,17 @@
         Me.omega.ShowImage = True
         Me.omega.ShowLabel = False
         '
+        'Roman_numerals
+        '
+        Me.Roman_numerals.Items.Add(Me.one)
+        Me.Roman_numerals.Items.Add(Me.two)
+        Me.Roman_numerals.Items.Add(Me.three)
+        Me.Roman_numerals.Items.Add(Me.four)
+        Me.Roman_numerals.Items.Add(Me.five)
+        Me.Roman_numerals.Items.Add(Me.Menu4)
+        Me.Roman_numerals.Label = "Roman Numerals"
+        Me.Roman_numerals.Name = "Roman_numerals"
+        '
         'one
         '
         Me.one.Image = CType(resources.GetObject("one.Image"), System.Drawing.Image)
@@ -990,6 +845,17 @@
         Me.ten.ShowImage = True
         Me.ten.ShowLabel = False
         '
+        'Group7
+        '
+        Me.Group7.Items.Add(Me.a)
+        Me.Group7.Items.Add(Me.b)
+        Me.Group7.Items.Add(Me.c)
+        Me.Group7.Items.Add(Me.siga)
+        Me.Group7.Items.Add(Me.sigb)
+        Me.Group7.Items.Add(Me.sigc)
+        Me.Group7.Label = "Sum a b c"
+        Me.Group7.Name = "Group7"
+        '
         'a
         '
         Me.a.Image = CType(resources.GetObject("a.Image"), System.Drawing.Image)
@@ -1044,6 +910,15 @@
         Me.sigc.ShowImage = True
         Me.sigc.ShowLabel = False
         '
+        'Group15
+        '
+        Me.Group15.Items.Add(Me.DownApply)
+        Me.Group15.Items.Add(Me.RightApply)
+        Me.Group15.Items.Add(Me.ArrowBox)
+        Me.Group15.Items.Add(Me.MultiIllu)
+        Me.Group15.Label = "Arrow"
+        Me.Group15.Name = "Group15"
+        '
         'DownApply
         '
         Me.DownApply.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
@@ -1079,6 +954,17 @@
         Me.MultiIllu.Name = "MultiIllu"
         Me.MultiIllu.ScreenTip = "Select a range to draw a connecting arrow"
         Me.MultiIllu.ShowImage = True
+        '
+        'Group18
+        '
+        Me.Group18.Items.Add(Me.ColorYellow)
+        Me.Group18.Items.Add(Me.ColorAqua)
+        Me.Group18.Items.Add(Me.ColorLime)
+        Me.Group18.Items.Add(Me.ColorSilver)
+        Me.Group18.Items.Add(Me.ColorFuchsia)
+        Me.Group18.Items.Add(Me.ColorWhite)
+        Me.Group18.Label = "Fill Color"
+        Me.Group18.Name = "Group18"
         '
         'ColorYellow
         '
@@ -1136,6 +1022,17 @@
         Me.ColorWhite.ShowImage = True
         Me.ColorWhite.ShowLabel = False
         '
+        'Group14
+        '
+        Me.Group14.Items.Add(Me.SheetArrow)
+        Me.Group14.Items.Add(Me.Direction1)
+        Me.Group14.Items.Add(Me.Direction2)
+        Me.Group14.Items.Add(Me.Direction3)
+        Me.Group14.Items.Add(Me.Direction4)
+        Me.Group14.Items.Add(Me.Direction5)
+        Me.Group14.Label = "Direction"
+        Me.Group14.Name = "Group14"
+        '
         'SheetArrow
         '
         Me.SheetArrow.Label = "SheetArrow"
@@ -1189,6 +1086,17 @@
         Me.Direction5.ScreenTip = "Create two boxes pointing to each other ⑸ "
         Me.Direction5.ShowImage = True
         Me.Direction5.ShowLabel = False
+        '
+        'Group12
+        '
+        Me.Group12.Items.Add(Me.Note)
+        Me.Group12.Items.Add(Me.Note1)
+        Me.Group12.Items.Add(Me.Note2)
+        Me.Group12.Items.Add(Me.Note3)
+        Me.Group12.Items.Add(Me.Note4)
+        Me.Group12.Items.Add(Me.Note5)
+        Me.Group12.Label = "Note"
+        Me.Group12.Name = "Group12"
         '
         'Note
         '
@@ -1244,6 +1152,13 @@
         Me.Note5.ShowImage = True
         Me.Note5.ShowLabel = False
         '
+        'Group16
+        '
+        Me.Group16.Items.Add(Me.LeftBrace)
+        Me.Group16.Items.Add(Me.InsertColumn)
+        Me.Group16.Label = "Insert"
+        Me.Group16.Name = "Group16"
+        '
         'LeftBrace
         '
         Me.LeftBrace.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
@@ -1252,6 +1167,60 @@
         Me.LeftBrace.OfficeImageId = "ShapeLeftBrace"
         Me.LeftBrace.ScreenTip = "Entry brace"
         Me.LeftBrace.ShowImage = True
+        '
+        'InsertColumn
+        '
+        Me.InsertColumn.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
+        Me.InsertColumn.Label = "Insert Column"
+        Me.InsertColumn.Name = "InsertColumn"
+        Me.InsertColumn.OfficeImageId = "AddNewColumnMenu"
+        Me.InsertColumn.ScreenTip = "Insert a narrow column "
+        Me.InsertColumn.ShowImage = True
+        '
+        'Group6
+        '
+        Me.Group6.Items.Add(Me.HyperLink)
+        Me.Group6.Items.Add(Me.hyperlinkCell)
+        Me.Group6.Label = "HyperLink"
+        Me.Group6.Name = "Group6"
+        '
+        'HyperLink
+        '
+        Me.HyperLink.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
+        Me.HyperLink.Label = "Cell Link"
+        Me.HyperLink.Name = "HyperLink"
+        Me.HyperLink.OfficeImageId = "AccessRelinkLists"
+        Me.HyperLink.ScreenTip = "Cell Link"
+        Me.HyperLink.ShowImage = True
+        Me.HyperLink.SuperTip = "Create boxes linked with hyperlinks to the lower right of both of the selected ce" &
+    "lls."
+        '
+        'hyperlinkCell
+        '
+        Me.hyperlinkCell.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
+        Me.hyperlinkCell.Label = "Hyperlink"
+        Me.hyperlinkCell.Name = "hyperlinkCell"
+        Me.hyperlinkCell.OfficeImageId = "BuildHyperlink"
+        Me.hyperlinkCell.ScreenTip = "Build Hyperlink"
+        Me.hyperlinkCell.ShowImage = True
+        Me.hyperlinkCell.SuperTip = "Build hyperlinks on both of the selected cells ."
+        '
+        'Group4
+        '
+        Me.Group4.Items.Add(Me.Menu5)
+        Me.Group4.Label = "Signature"
+        Me.Group4.Name = "Group4"
+        '
+        'Menu5
+        '
+        Me.Menu5.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
+        Me.Menu5.Items.Add(Me.Preparer2)
+        Me.Menu5.Items.Add(Me.Reviewer2)
+        Me.Menu5.ItemSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
+        Me.Menu5.Label = "Signature"
+        Me.Menu5.Name = "Menu5"
+        Me.Menu5.OfficeImageId = "SignatureLineInsert"
+        Me.Menu5.ShowImage = True
         '
         'Preparer2
         '
@@ -1274,6 +1243,14 @@
         Me.Reviewer2.ShowImage = True
         Me.Reviewer2.SuperTip = "To set up your name, go to File > Options > General > Personalize your copy of Mi" &
     "crosoft office."
+        '
+        'Group5
+        '
+        Me.Group5.Items.Add(Me.RedPen)
+        Me.Group5.Items.Add(Me.BluePen)
+        Me.Group5.Items.Add(Me.BlackPen)
+        Me.Group5.Label = "Marker"
+        Me.Group5.Name = "Group5"
         '
         'RedPen
         '
@@ -1301,6 +1278,18 @@
         Me.BlackPen.OfficeImageId = "PencilTool"
         Me.BlackPen.ScreenTip = "Black Marker"
         Me.BlackPen.ShowImage = True
+        '
+        'Group3
+        '
+        Me.Group3.Items.Add(Me.Calendar_ToggleButton)
+        Me.Group3.Items.Add(Me.CheckBox)
+        Me.Group3.Items.Add(Me.ClearCheckBox)
+        Me.Group3.Items.Add(Me.Separator1)
+        Me.Group3.Items.Add(Me.RedArrow)
+        Me.Group3.Items.Add(Me.DoubleLine)
+        Me.Group3.Items.Add(Me.CommaStyle)
+        Me.Group3.Label = "Others"
+        Me.Group3.Name = "Group3"
         '
         'Calendar_ToggleButton
         '
@@ -1330,6 +1319,10 @@
         Me.ClearCheckBox.ShowImage = True
         Me.ClearCheckBox.ShowLabel = False
         '
+        'Separator1
+        '
+        Me.Separator1.Name = "Separator1"
+        '
         'RedArrow
         '
         Me.RedArrow.Label = "紅箭頭"
@@ -1357,6 +1350,12 @@
         Me.CommaStyle.ShowImage = True
         Me.CommaStyle.ShowLabel = False
         Me.CommaStyle.SuperTip = "Format with a thousands separator."
+        '
+        'Group11
+        '
+        Me.Group11.Items.Add(Me.Menu1)
+        Me.Group11.Label = "Be Careful"
+        Me.Group11.Name = "Group11"
         '
         'Menu1
         '
@@ -1398,6 +1397,12 @@
         Me.ClearAllShape.ScreenTip = "Remove all shapes"
         Me.ClearAllShape.ShowImage = True
         '
+        'Group1
+        '
+        Me.Group1.Items.Add(Me.Quote)
+        Me.Group1.Label = "Get Motivated"
+        Me.Group1.Name = "Group1"
+        '
         'Quote
         '
         Me.Quote.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
@@ -1407,6 +1412,12 @@
         Me.Quote.ScreenTip = "Get motivated every day!"
         Me.Quote.ShowImage = True
         '
+        'Group13
+        '
+        Me.Group13.Items.Add(Me.Copyright_ToggleButton)
+        Me.Group13.Label = "License"
+        Me.Group13.Name = "Group13"
+        '
         'Copyright_ToggleButton
         '
         Me.Copyright_ToggleButton.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
@@ -1415,17 +1426,6 @@
         Me.Copyright_ToggleButton.Name = "Copyright_ToggleButton"
         Me.Copyright_ToggleButton.ScreenTip = "Copyright"
         Me.Copyright_ToggleButton.ShowImage = True
-        '
-        'Menu5
-        '
-        Me.Menu5.ControlSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
-        Me.Menu5.Items.Add(Me.Preparer2)
-        Me.Menu5.Items.Add(Me.Reviewer2)
-        Me.Menu5.ItemSize = Microsoft.Office.Core.RibbonControlSize.RibbonControlSizeLarge
-        Me.Menu5.Label = "Signature"
-        Me.Menu5.Name = "Menu5"
-        Me.Menu5.OfficeImageId = "SignatureLineInsert"
-        Me.Menu5.ShowImage = True
         '
         'Ribbon1
         '
@@ -1450,8 +1450,6 @@
         Me.Group7.PerformLayout()
         Me.Group15.ResumeLayout(False)
         Me.Group15.PerformLayout()
-        Me.Group3.ResumeLayout(False)
-        Me.Group3.PerformLayout()
         Me.Group18.ResumeLayout(False)
         Me.Group18.PerformLayout()
         Me.Group14.ResumeLayout(False)
@@ -1466,6 +1464,8 @@
         Me.Group4.PerformLayout()
         Me.Group5.ResumeLayout(False)
         Me.Group5.PerformLayout()
+        Me.Group3.ResumeLayout(False)
+        Me.Group3.PerformLayout()
         Me.Group11.ResumeLayout(False)
         Me.Group11.PerformLayout()
         Me.Group1.ResumeLayout(False)
