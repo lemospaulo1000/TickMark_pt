@@ -118,19 +118,14 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="Label1.Text" xml:space="preserve">
-    <value>Created by   : Liao Yan Ying
-Date               : 03.25.2017
-Purpose        : Tick mark for auditors and accountants
-Version          : 1.0.0
-Copyright      : This addin I created are licensed under 
-                           the Creative Commons Attribution 3.0 License,
-                           which means you can use them for personal stuff,
-                           use them for commercial stuff, and change them 
-                           however you like. In exchange, just give me credit 
-                           for the design and tell your friends/colleagues about
-                           it :)
+    <value>Créditos e Licença
 
-Get in touch  : n9102125@gmail.com 
-                           Any feedback would be greatly appreciated.</value>
+Projeto originalmente criado por: Liao Yan Ying (2017)
+Componentes de design e ícones: Creative Commons Attribution 3.0 (CC BY 3.0)
+
+Este fork (modificações e manutenção): Paulo (lemospaulo1000)
+
+Finalidade
+Add-in do Excel para inserir tick marks e marcações de auditoria em planilhas.</value>
   </data>
 </root>
