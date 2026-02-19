@@ -1,0 +1,33 @@
+# Visual Studio (cache local)
+.vs/
+
+# VSTO publish / artefatos
+*.vsto
+*.pdb
+*.dll
+*.manifest
+
+
+# Build outputs (sempre gerados)
+**/bin/
+**/obj/
+
+# Arquivos locais do usuário/IDE
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Logs de upgrade do Visual Studio
+UpgradeLog*.htm
+UpgradeLog*.xml
+
+# Temporários comuns
+*.tmp
+*.log
+~$*
+
+# Installer outputs (gerados)
+*.msi
+setup.exe
+AuditorAddInRibbon_Installer/

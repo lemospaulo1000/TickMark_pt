@@ -305,8 +305,8 @@ Public Class Ribbon1
              Left + Width * 0.796, Top + 12, Left + Width * 0.796 + 6, Top + 14)
         With connector1
             .Name = "line1"
-            .line.weight = 1
-            .line.ForeColor.RGB = RGB(255, 0, 0)
+            .Line.Weight = 1
+            .Line.ForeColor.RGB = RGB(255, 0, 0)
         End With
 
         'Create the hyperlink next to the Target Cell in Target Sheet
@@ -338,8 +338,8 @@ Public Class Ribbon1
              TargetLeft + 10, TargetTop + 5, TargetLeft + 1, TargetTop + 1)
         With connector2
             .Name = "line2"
-            .line.weight = 1
-            .line.ForeColor.RGB = RGB(255, 0, 0)
+            .Line.Weight = 1
+            .Line.ForeColor.RGB = RGB(255, 0, 0)
         End With
 
         app.Sheets(strBeginningSheetName).Activate
@@ -491,7 +491,7 @@ Public Class Ribbon1
                 .Line.EndArrowheadStyle = Microsoft.Office.Core.MsoArrowheadStyle.msoArrowheadOpen
                 .Line.BeginArrowheadStyle = Microsoft.Office.Core.MsoArrowheadStyle.msoArrowheadOval
             End With
-        ElseIf (Left = targetleft) And (Top > TargetTop) Then
+        ElseIf (Left = TargetLeft) And (Top > TargetTop) Then
             connectorBeg = app.ActiveSheet.Shapes.addconnector _
            (Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
             Left + Width, Top, Left + Width, Top - 13)
@@ -511,7 +511,7 @@ Public Class Ribbon1
                 .Line.EndArrowheadStyle = Microsoft.Office.Core.MsoArrowheadStyle.msoArrowheadOpen
                 .Line.BeginArrowheadStyle = Microsoft.Office.Core.MsoArrowheadStyle.msoArrowheadOval
             End With
-        ElseIf (Left = targetleft) And (Top < TargetTop) Then
+        ElseIf (Left = TargetLeft) And (Top < TargetTop) Then
             connectorBeg = app.ActiveSheet.Shapes.addconnector _
            (Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
             Left + Width, Top + Height, Left + Width, Top + Height + 13)
@@ -3708,7 +3708,7 @@ Public Class Ribbon1
         End Select
 
         With appCell
-            .Value = begValue & quote
+            .Value = begValue & Quote
             .Font.Name = "Comic Sans MS"
             .Font.Size = 12
         End With
@@ -7037,30 +7037,70 @@ Public Class Ribbon1
 
     Private Sub FS_Click(sender As Object, e As RibbonControlEventArgs) Handles FS.Click
         Dim app As Excel.Application = Globals.ThisAddIn.Application
+        Dim r As Excel.Range = TryCast(app.Selection, Excel.Range)
+        If r Is Nothing Then Exit Sub
+        If r.Areas.Count > 1 OrElse r.Cells.CountLarge <> 1 Then Exit Sub ' conservador: só 1 célula
+
         Dim connector1 As Excel.Shape
         Dim connector2 As Excel.Shape
-        Dim r As Excel.Range
 
-        Dim selection As String = app.Selection.Address(ReferenceStyle:=Excel.XlReferenceStyle.xlA1,
-                                        RowAbsolute:=False, ColumnAbsolute:=False)
-
-        r = app.Range(selection)
-
-        connector1 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 5.8, r.Top + 2.7, r.Left + 10.8, r.Top + 14)
+        ' Desenhar os conectores com coordenadas relativas à célula
+        connector1 = app.ActiveSheet.Shapes.AddConnector(
+        Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
+        r.Left + 5.8, r.Top + 2.7, r.Left + 10.8, r.Top + 14
+    )
         connector1.Line.ForeColor.RGB = RGB(255, 0, 0)
         connector1.Line.Weight = 1.3
 
-        connector2 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 2.4, r.Top + 5, r.Left + 6.2, r.Top + 3)
+        connector2 = app.ActiveSheet.Shapes.AddConnector(
+        Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
+        r.Left + 2.4, r.Top + 5, r.Left + 6.2, r.Top + 3
+    )
         connector2.Line.ForeColor.RGB = RGB(255, 0, 0)
         connector2.Line.Weight = 1.3
 
+        ' Agrupar e reposicionar
+        Dim midObj As Object() = New Object() {connector1.Name, connector2.Name}
+        Dim grouped As Excel.Shape = app.ActiveSheet.Shapes.Range(midObj).Group()
+        grouped.Name = "FS_" & Guid.NewGuid().ToString("N") ' evita nomes repetidos
+        grouped.Placement = Excel.XlPlacement.xlMoveAndSize
 
-        'Group the shp and the arrow
-        Dim MidObj As Object() = New Object() {connector1.Name, connector2.Name}
-        app.ActiveSheet.Shapes.Range(MidObj).Group()
+        ' Posicionar DENTRO da célula, encostado à direita
+        Dim innerOffset As Double = 3 ' margem interna (ajuste fino)
+        grouped.Left = r.Left + r.Width - grouped.Width - innerOffset
+        grouped.Top = r.Top + (r.Height - grouped.Height) / 2
+
+        ' Evitar que texto fique por baixo do FS:
+        ' - NÃO mexe no alinhamento
+        ' - Só aplica indent se alinhamento for Esquerda ou Geral (onde indent funciona)
+        Try
+            Dim ha As Integer = CInt(r.HorizontalAlignment)
+
+            If ha = Excel.Constants.xlGeneral Then
+                If IsNumeric(r.Value2) Then
+                    ' número em "Geral": fixa à direita para permitir recuo pela direita
+                    r.HorizontalAlignment = Excel.Constants.xlRight
+                    r.HorizontalAlignment = Excel.Constants.xlRight
+                Else
+                    ' texto em "Geral": fixa à esquerda (visual igual ao "Geral" para texto)
+                    r.HorizontalAlignment = Excel.Constants.xlLeft
+                End If
+                ha = CInt(r.HorizontalAlignment)
+            End If
+
+            ' Recuo 2x (equivalente a clicar "Aumentar recuo" duas vezes)
+            If ha = Excel.Constants.xlLeft OrElse ha = Excel.Constants.xlRight Then
+                r.IndentLevel = Math.Min(15, CInt(r.IndentLevel) + 2)
+            End If
+
+        Catch
+        End Try
+
+
+
+
     End Sub
+
 
     Private Sub NotMaterial_Click(sender As Object, e As RibbonControlEventArgs) Handles NotMaterial.Click
         Dim app As Excel.Application = Globals.ThisAddIn.Application
@@ -7075,9 +7115,9 @@ Public Class Ribbon1
 
         shapeBeg = app.ActiveSheet.Shapes.AddTextbox _
             (Microsoft.Office.Core.MsoTextOrientation.msoTextOrientationHorizontal, r.Left, r.Top, 50, r.Height)
-        With shapeBeg.textframe2.textrange.Font
+        With shapeBeg.TextFrame2.TextRange.Font
             .Size = 12
-            .name = "Arial"
+            .Name = "Arial"
             .Fill.ForeColor.RGB = RGB(255, 0, 0)
         End With
         With shapeBeg
@@ -7091,7 +7131,7 @@ Public Class Ribbon1
             .MarginRight = 0
             .MarginLeft = 3
         End With
-        shapeBeg.TextFrame.autosize = True
+        shapeBeg.TextFrame.AutoSize = True
 
         connector1 = app.ActiveSheet.Shapes.Addconnector _
 (Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 3, r.Top + r.Height - 5, r.Left + 13, r.Top + 3)
