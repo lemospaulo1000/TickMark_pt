@@ -1,7 +1,32 @@
-## TickMark
+\# TickMark (fork)
 
-Page: [https://noworneverev.github.io/tickmark_demo/](https://noworneverev.github.io/tickmark_demo/)
 
-Demo: [https://youtu.be/Hi4jG4As_h8](https://youtu.be/Hi4jG4As_h8)
 
-[Download this Excel Tick Mark Add in](https://github.com/marshuang-com/TickMark/releases/download/1.0.0/Tick.Mark.msi)
+Add-in VSTO para Excel que insere tick marks/marcações de auditoria diretamente nas células (via Ribbon).
+
+
+
+\## Status
+
+Desenvolvimento ativo no branch: `feature/tick2-image`.
+
+
+
+\## Instalação
+
+O instalador (MSI) será disponibilizado nas Releases deste repositório quando estiver pronto.
+
+
+
+\## Uso
+
+Abra o Excel e utilize os botões na Ribbon para inserir as marcações na célula selecionada.
+
+
+
+\## Créditos e licença
+
+Veja `NOTICE.md` para atribuição ao projeto original e informações de licença (CC BY 3.0 para design/ícones).
+
+
+
