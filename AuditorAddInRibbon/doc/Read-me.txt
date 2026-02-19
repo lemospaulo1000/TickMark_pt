@@ -1,0 +1,387 @@
+Manual completo: Compilar e distribuir o TickMark (VSTO) com MSI/Setup.exe
+0) Pré-requisitos no seu PC de desenvolvimento
+
+Confirmado no seu ambiente:
+
+Visual Studio 2026 (18.2.1) stable (PT-BR)
+
+Excel Microsoft 365 64-bit
+
+.NET Framework 4.8 Developer Pack
+
+Extensão do VS: Microsoft Visual Studio Installer Projects
+
+Projeto: AuditorAddInRibbon.sln (TickMark do GitHub noworneverev/TickMark)
+
+1) Compilação do Add-in (VSTO)
+
+Abra a solução correta:
+
+Arquivo > Abrir > Projeto/Solução…
+
+Selecione: AuditorAddInRibbon.sln
+
+Configure Release:
+
+Barra superior: Configuração = Release
+
+Plataforma: Any CPU (como você usou)
+
+Compile o projeto do add-in:
+
+No Solution Explorer (Gerenciador de Soluções)
+
+Botão direito em AuditorAddInRibbon → Compilar (ou Recompilar)
+
+✅ Saída esperada:
+
+C:\Src\TickMark\AuditorAddInRibbon\bin\Release\AuditorAddInRibbon.dll
+
+C:\Src\TickMark\AuditorAddInRibbon\bin\Release\AuditorAddInRibbon.vsto
+
+C:\Src\TickMark\AuditorAddInRibbon\bin\Release\AuditorAddInRibbon.dll.manifest
+
+Esses 2 últimos (.vsto e .dll.manifest) foram cruciais para o Excel “enxergar” e carregar corretamente via MSI.
+
+2) Criar/usar o projeto instalador (Setup Project / .vdproj)
+
+Instale o template (uma vez):
+
+Extensões > Gerenciar Extensões > “Microsoft Visual Studio Installer Projects”
+
+Crie o projeto do instalador:
+
+Arquivo > Novo > Projeto
+
+Escolha Setup Project
+
+Nome sugerido: AuditorAddInRibbon_Installer
+
+Onde achar o .vdproj:
+
+No Solution Explorer, expanda o projeto do instalador.
+
+Geralmente aparece como AuditorAddInRibbon_Installer.vdproj.
+
+Se não achar: clique com botão direito na solução → Abrir pasta no Explorador e procure por *.vdproj.
+
+3) Configurar Pré-requisitos (setup.exe) — .NET 4.8 e VSTO Runtime
+
+Observação: no seu caso, o EXE acabou não instalando nada no alvo, mas você configurou corretamente para cenários onde pré-reqs sejam necessários.
+
+Como abrir:
+
+No Solution Explorer → clique no projeto AuditorAddInRibbon_Installer
+
+Botão direito → Propriedades
+
+Procure o botão Pré-requisitos…
+
+O que marcar (do jeito que ficou correto):
+
+✅ Microsoft .NET Framework 4.8 (x86 e x64)
+
+✅ Microsoft Visual Studio 2010 Tools for Office Runtime (x86 e x64)
+
+❌ Desmarcar .NET 4.7.2 (não precisava)
+
+“Baixar pré-requisitos…”
+
+Você optou por:
+
+Baixar do site do fornecedor
+(ou seja, precisa internet/admin quando realmente for instalar pré-req)
+
+4) O erro principal que impedia o add-in de aparecer no Excel
+
+No computador alvo, o add-in não aparecia em lista nenhuma porque o MSI:
+
+não criava as chaves do Excel em …\Excel\Addins
+
+e não copiava o .vsto (e manifesto) para o destino que o Excel precisava
+
+A correção foi feita em 2 frentes:
+
+(A) Criar o registro do Add-in no Setup Project (Registry Editor)
+
+Onde abrir o editor de registro do instalador:
+
+Botão direito no projeto AuditorAddInRibbon_Installer
+
+Exibir/View → Registry (Editor de Registro)
+
+Criar a chave:
+
+HKEY_CURRENT_USER\Software\Microsoft\Office\Excel\Addins\AuditorAddInRibbon
+
+Criar valores dentro dela (mínimo necessário):
+
+FriendlyName (String): AuditorAddInRibbon
+
+Description (String): texto livre (ex.: TickMark - Auditoria)
+
+LoadBehavior (DWORD): 3
+
+Manifest (String): "[TARGETDIR]AuditorAddInRibbon.vsto|vstolocal"
+
+✅ Isso fez o Excel passar a listar o suplemento.
+
+(B) Garantir que o .vsto e o .dll.manifest são instalados (File System)
+
+Onde abrir o File System do instalador:
+
+Botão direito no projeto AuditorAddInRibbon_Installer
+
+Exibir/View → File System
+
+Em Application Folder, você já tinha “Saída Primária (Primary Output)”, mas isso não garantia o .vsto.
+
+Então você adicionou manualmente:
+
+AuditorAddInRibbon.vsto
+
+AuditorAddInRibbon.dll.manifest
+
+Como adicionar:
+
+Em Application Folder → botão direito → Add/Adicionar > File/Arquivo…
+
+Selecione a partir de:
+C:\Src\TickMark\AuditorAddInRibbon\bin\Release\
+
+✅ Isso foi o que “fechou o ciclo” (registro aponta para [TARGETDIR]AuditorAddInRibbon.vsto e agora o arquivo existe no TARGETDIR).
+
+5) Padronizar o caminho de instalação (per-user) e evitar duplicidade
+
+Você escolheu a estratégia mais prática: instalação por usuário, em LocalAppData.
+
+Ajustar Manufacturer e ProductName (identidade do produto)
+
+No projeto AuditorAddInRibbon_Installer:
+
+Abra Propriedades (F4)
+
+Você definiu:
+
+Manufacturer = TCEES-NGF
+
+ProductName = TickMark_Pt
+
+Isso não renomeia nada no seu código nem no repositório. Só muda “nome do produto” e pasta padrão do instalador.
+
+Ajustar DefaultLocation (onde realmente muda o TARGETDIR)
+
+Não fica nas propriedades do projeto — fica nas propriedades do Application Folder.
+
+Como achar:
+
+File System
+
+Clique em Application Folder
+
+Pressione F4 (Propriedades do Application Folder)
+
+Aí você muda DefaultLocation.
+
+Erro que aconteceu
+
+Você colocou:
+
+[%LocalAppDataFolder%]\...
+e o instalador deu erro “Invalid default location”.
+
+Forma correta que funcionou
+
+Você ajustou para:
+
+[LocalAppDataFolder]TCEES-NGF\TickMark_Pt\
+
+✅ Isso passou e fez TARGETDIR virar AppData\Local\TCEES-NGF\TickMark_Pt\.
+
+Evitar duplicidade ao atualizar
+
+No projeto do instalador (F4 nas propriedades do projeto):
+
+RemovePreviousVersions = True
+
+DetectNewerInstalledVersion = True (já estava True)
+
+Regra para novas versões:
+
+aumente Version
+
+quando o VS perguntar se quer atualizar o ProductCode, diga Sim
+
+✅ Isso evita acumular versões/pastas e diminuir risco de “duas entradas” no Excel.
+
+6) Compilar o instalador (MSI e setup.exe)
+
+Salvar tudo
+
+Botão direito no projeto AuditorAddInRibbon_Installer → Recompilar
+
+Saída padrão:
+
+pasta ...\AuditorAddInRibbon_Installer\Release\
+
+gera:
+
+.msi
+
+setup.exe
+
+7) Instalar e validar no computador alvo (checklist objetivo)
+7.1 Instalação
+
+Você pode usar MSI ou setup.exe
+
+No seu teste, MSI funcionou (setup.exe não instalou pré-req e foi “rápido”)
+
+Não apague o MSI se quiser manter o setup.exe. O setup.exe normalmente chama o MSI.
+
+7.2 Verificar no Excel
+
+Excel → Arquivo → Opções → Suplementos:
+
+Gerenciar: Suplementos de Aplicativos → Ir…
+
+(Se der problema) Itens desabilitados → Ir…
+
+7.3 Verificar registro (depois de instalar)
+
+No alvo:
+
+regedit
+
+HKCU\Software\Microsoft\Office\Excel\Addins\AuditorAddInRibbon
+
+Confirme:
+
+LoadBehavior=3
+
+Manifest apontando para algo como:
+C:\Users\<usuario>\AppData\Local\TCEES-NGF\TickMark_Pt\AuditorAddInRibbon.vsto|vstolocal
+
+E confira também duplicidade:
+
+HKLM\Software\Microsoft\Office\Excel\Addins
+(ideal: não ter a mesma chave lá, já que sua estratégia é por usuário)
+
+8) Sobre o aviso “Editor desconhecido” na instalação
+
+Você concluiu corretamente: para distribuição “qualquer pessoa”, sem compra de certificado, o aviso pode aparecer e o usuário decide se confia/instala.
+
+Resumo do “pulo do gato” (o que realmente fez funcionar)
+
+Criar as chaves HKCU...\Excel\Addins\AuditorAddInRibbon
+
+Preencher Manifest com [TARGETDIR]...vsto|vstolocal
+
+Instalar junto o AuditorAddInRibbon.vsto e AuditorAddInRibbon.dll.manifest
+
+Padronizar TARGETDIR em LocalAppDataFolder (por usuário)
+
+(Opcional) Pré-req: marcar .NET 4.8 + VSTO Runtime, remover 4.7.2
+
+Se você quiser, no próximo passo eu faço um “manual de distribuição” bem curto (tipo README) para você mandar junto do instalador, com 5 linhas: como instalar, onde aparece no Excel, e o que fazer se não aparecer.
+
+sim
+
+Perfeito — segue um README curtinho (pronto pra você colar num .txt junto do instalador) + um mini troubleshooting igualmente curto.
+
+TickMark_Pt — Instalação rápida (Excel)
+1) Arquivos
+
+Use a pasta Release do instalador. Ela contém:
+
+setup.exe
+
+TickMark_Pt.msi (nome pode variar)
+
+2) Como instalar
+
+Feche o Excel.
+
+Execute o MSI (recomendado no nosso caso) e escolha “Somente para mim”.
+
+Conclua a instalação.
+
+Abra o Excel e verifique a nova guia/botões do TickMark.
+
+Se aparecer aviso do Windows “Editor desconhecido”, confirme apenas se você confia na origem do instalador.
+
+3) Como confirmar no Excel
+
+Excel → Arquivo → Opções → Suplementos
+Em “Gerenciar”, verifique:
+
+Suplementos de Aplicativos → Ir…
+
+Itens desabilitados → Ir…
+
+4) Se o suplemento não aparecer
+(A) Conferir Registro (mais objetivo)
+
+Win+R → regedit → vá em:
+HKEY_CURRENT_USER\Software\Microsoft\Office\Excel\Addins\AuditorAddInRibbon
+
+Deve existir:
+
+LoadBehavior = 3
+
+Manifest = ...\AppData\Local\TCEES-NGF\TickMark_Pt\AuditorAddInRibbon.vsto|vstolocal
+
+(B) Conferir se os arquivos existem na pasta instalada
+
+Abra:
+%LOCALAPPDATA%\TCEES-NGF\TickMark_Pt\
+
+Deve existir:
+
+AuditorAddInRibbon.vsto
+
+AuditorAddInRibbon.dll.manifest
+
+AuditorAddInRibbon.dll
+
+5) Desinstalar
+
+Painel de Controle → Programas → desinstale TickMark_Pt.
+
+Se você quiser, eu também consigo te entregar uma versão “de 1 página” (bem enxuta) só com: instalar/abrir excel/onde ver suplementos/como desinstalar.
+
+sim
+
+Aqui vai a versão “1 página” (bem enxuta) — ideal pra mandar junto do instalador:
+
+TickMark_Pt — Instruções (1 página)
+Instalar
+
+Feche o Excel.
+
+Execute TickMark_Pt.msi (ou o .msi equivalente).
+
+Escolha Somente para mim.
+
+Conclua e abra o Excel.
+
+Se o Windows avisar “Editor desconhecido”, prossiga apenas se você confia na origem do arquivo.
+
+Ver no Excel
+
+Excel → Arquivo → Opções → Suplementos
+Em Gerenciar, verifique:
+
+Suplementos de Aplicativos → Ir…
+
+Se não aparecer, verifique também: Itens desabilitados → Ir…
+
+Se não aparecer
+
+Win+R → regedit
+
+Verifique a chave:
+HKEY_CURRENT_USER\Software\Microsoft\Office\Excel\Addins\AuditorAddInRibbon
+
+Confirme que existe LoadBehavior=3 e Manifest apontando para:
+%LOCALAPPDATA%\TCEES-NGF\TickMark_Pt\AuditorAddInRibbon.vsto|vstolocal
