@@ -218,12 +218,65 @@ Public Class Ribbon1
     End Sub
 
     Private Sub ClearAllShape_Click(sender As Object, e As RibbonControlEventArgs) Handles ClearAllShape.Click
-        Dim sht As Excel.Worksheet
-        sht = Globals.ThisAddIn.Application.ActiveSheet
-        sht.Shapes.SelectAll()
-        Globals.ThisAddIn.Application.Selection.Delete()
+        Dim app As Excel.Application = Globals.ThisAddIn.Application
+        Dim ws As Excel.Worksheet = TryCast(app.ActiveSheet, Excel.Worksheet)
+        If ws Is Nothing Then Exit Sub
+
+        Dim resp As Integer = MsgBox(
+        "ATENÇÃO: isto irá apagar TODOS os TickMarks do grupo Work Paper nesta planilha (" & ws.Name & ")." & vbCrLf &
+        "Essa ação não pode ser desfeita." & vbCrLf & vbCrLf &
+        "Deseja continuar?",
+        vbYesNo + vbExclamation,
+        "TickMark - Remover todos"
+    )
+        If resp <> vbYes Then Exit Sub
+
+        Try
+            For i As Integer = ws.Shapes.Count To 1 Step -1
+                Try
+                    Dim shp As Excel.Shape = ws.Shapes.Item(i)
+                    If shp Is Nothing Then Continue For
+
+                    Dim nm As String = ""
+                    Dim tag As String = ""
+
+                    Try : nm = shp.Name : Catch : nm = "" : End Try
+                    Try : tag = shp.AlternativeText : Catch : tag = "" : End Try
+
+                    Dim isTickMark As Boolean =
+                    (Not String.IsNullOrEmpty(tag) AndAlso tag.StartsWith("TM|", StringComparison.Ordinal)) OrElse
+                    (Not String.IsNullOrEmpty(nm) AndAlso nm.StartsWith("TM_", StringComparison.Ordinal))
+
+                    Dim isGroup9 As Boolean =
+                    (Not String.IsNullOrEmpty(tag) AndAlso tag.StartsWith("GP9|", StringComparison.Ordinal)) OrElse
+                    (Not String.IsNullOrEmpty(nm) AndAlso nm.StartsWith("GP9_", StringComparison.Ordinal))
+
+                    If isTickMark OrElse isGroup9 Then
+                        shp.Delete()
+                    End If
+                Catch
+                End Try
+            Next
+        Catch
+        End Try
     End Sub
 
+    Private Sub TagGroup9Shape(shp As Excel.Shape, Optional groupId As String = Nothing)
+        If shp Is Nothing Then Exit Sub
+
+        If String.IsNullOrEmpty(groupId) Then
+            groupId = Guid.NewGuid().ToString("N")
+        End If
+
+        'marca por AlternativeText (não exige unicidade)
+        shp.AlternativeText = "GP9|" & groupId
+
+        'tenta marcar por Name também (pode falhar por colisão)
+        Try
+            shp.Name = "GP9_" & groupId
+        Catch
+        End Try
+    End Sub
     Private Sub RedArrow_Click(sender As Object, e As RibbonControlEventArgs) Handles RedArrow.Click
         Dim appCell As Object = Globals.ThisAddIn.Application.ActiveCell
         Dim app As Object = Globals.ThisAddIn.Application
@@ -6959,17 +7012,133 @@ Public Class Ribbon1
         End With
     End Sub
 
-    Private Sub TB_Click(sender As Object, e As RibbonControlEventArgs) Handles TB.Click
-        Dim appCell As Object = Globals.ThisAddIn.Application.ActiveCell
-        Dim begValue As String = Globals.ThisAddIn.Application.ActiveCell.Value
+    Private Sub FS_Click(sender As Object, e As RibbonControlEventArgs) Handles FS.Click
+        Dim app As Excel.Application = Globals.ThisAddIn.Application
+        Dim sel As Excel.Range = TryCast(app.Selection, Excel.Range)
+        If sel Is Nothing Then Exit Sub
 
-        With appCell
-            .Value = begValue & "TB"
-            .Font.Color = RGB(255, 0, 0)
-            .Font.Name = "Times New Roman"
-            .Font.Size = 12
-            .font.bold = True
-        End With
+        Dim ws As Excel.Worksheet = TryCast(app.ActiveSheet, Excel.Worksheet)
+        If ws Is Nothing Then Exit Sub
+
+        'Alvos (suporta seleção múltipla; mescladas viram topo-esquerda da MergeArea)
+        Dim targetCells As New List(Of Excel.Range)()
+        Dim keySet As New System.Collections.Generic.HashSet(Of String)(System.StringComparer.Ordinal)
+
+        Try
+            For Each area As Excel.Range In sel.Areas
+                For Each cellObj As Object In area.Cells
+                    Dim c As Excel.Range = TryCast(cellObj, Excel.Range)
+                    If c Is Nothing Then Continue For
+
+                    If CBool(c.MergeCells) Then
+                        c = c.MergeArea.Cells(1, 1)
+                    End If
+
+                    Dim addr As String = c.Address(RowAbsolute:=False, ColumnAbsolute:=False)
+                    Dim cellKey As String = "TM|FS|" & addr
+
+                    If keySet.Add(cellKey) Then
+                        targetCells.Add(c)
+                    End If
+                Next
+            Next
+        Catch
+            Exit Sub
+        End Try
+
+        If targetCells.Count = 0 Then Exit Sub
+
+        'Remove ticks antigos só das células selecionadas (varre uma vez)
+        Try
+            For i As Integer = ws.Shapes.Count To 1 Step -1
+                Try
+                    Dim shp As Excel.Shape = ws.Shapes.Item(i)
+                    If shp Is Nothing Then Continue For
+
+                    Dim tag As String = shp.AlternativeText
+                    If Not String.IsNullOrEmpty(tag) AndAlso keySet.Contains(tag) Then
+                        shp.Delete()
+                    End If
+                Catch
+                End Try
+            Next
+        Catch
+        End Try
+
+        Dim prevScreenUpdating As Boolean = app.ScreenUpdating
+        app.ScreenUpdating = False
+
+        Try
+            Const innerOffset As Double = 3.0R
+
+            For Each c As Excel.Range In targetCells
+                Dim addr As String = c.Address(RowAbsolute:=False, ColumnAbsolute:=False)
+                Dim cellKey As String = "TM|FS|" & addr
+
+                'Tamanho proporcional à altura e limitado pela largura da célula
+                'Mínimos ajustados para evitar cortar letras ("S" sumindo por falta de área útil)
+                Dim targetH As Double = Math.Max(12.0R, c.Height * 0.75R)
+                Dim maxW As Double = Math.Max(16.0R, c.Width * 0.45R)
+                Dim targetW As Double = Math.Min(maxW, Math.Max(18.0R, c.Width * 0.22R))
+
+                Dim box As Excel.Shape = ws.Shapes.AddTextbox(
+                Orientation:=Microsoft.Office.Core.MsoTextOrientation.msoTextOrientationHorizontal,
+                Left:=CSng(c.Left),
+                Top:=CSng(c.Top),
+                Width:=CSng(targetW),
+                Height:=CSng(targetH)
+            )
+
+                Try
+                    box.TextFrame.Characters.Text = "FS"
+                    box.TextFrame.HorizontalAlignment = Excel.XlHAlign.xlHAlignCenter
+                    box.TextFrame.VerticalAlignment = Excel.XlVAlign.xlVAlignCenter
+                    box.TextFrame.AutoSize = False
+
+                    'Zerar margens internas (evita “sumir o S” em caixas pequenas)
+                    Try
+                        box.TextFrame.MarginLeft = 0
+                        box.TextFrame.MarginRight = 0
+                        box.TextFrame.MarginTop = 0
+                        box.TextFrame.MarginBottom = 0
+                    Catch
+                    End Try
+
+                    'Evitar quebra de linha
+                    Try
+                        box.TextFrame.WordWrap = False
+                    Catch
+                    End Try
+
+                    box.TextFrame.Characters.Font.Bold = True
+                    box.TextFrame.Characters.Font.Color = RGB(255, 0, 0)
+                Catch
+                    'Se falhar o TextFrame, apaga e segue
+                    Try : box.Delete() : Catch : End Try
+                    Continue For
+                End Try
+
+                'Sem borda / sem preenchimento (fica “só a letra”)
+                Try : box.Line.Visible = Microsoft.Office.Core.MsoTriState.msoFalse : Catch : End Try
+                Try : box.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoFalse : Catch : End Try
+
+                'Tags + placement (para ClearAllShape remover)
+                Try : box.Placement = Excel.XlPlacement.xlMoveAndSize : Catch : End Try
+                Try : box.AlternativeText = cellKey : Catch : End Try
+                Try
+                    Dim safeAddr As String = addr.Replace("$", "").Replace(":", "_")
+                    box.Name = "TM_FS_" & safeAddr & "_" & Guid.NewGuid().ToString("N").Substring(0, 6)
+                Catch
+                End Try
+
+                'ESQUERDA + centro vertical (padrão estável)
+                box.Left = CSng(c.Left + innerOffset)
+                box.Top = CSng(c.Top + (c.Height - box.Height) / 2.0R)
+            Next
+
+        Finally
+            app.ScreenUpdating = prevScreenUpdating
+        End Try
     End Sub
     Private Sub Tick2_Click(sender As Object, e As RibbonControlEventArgs) Handles Tick2.Click
         Dim app As Excel.Application = Globals.ThisAddIn.Application
@@ -7084,7 +7253,11 @@ Public Class Ribbon1
                     pic.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue
                     pic.Placement = Excel.XlPlacement.xlMoveAndSize
                     pic.AlternativeText = cellKey
-
+                    Try
+                        Dim safeAddr As String = addr.Replace("$", "").Replace(":", "_")
+                        pic.Name = "TM_Tick2_" & safeAddr & "_" & Guid.NewGuid().ToString("N").Substring(0, 6)
+                    Catch
+                    End Try
                     'ESQUERDA + centro vertical (estável com redimensionamento)
                     pic.Left = CSng(c.Left + innerOffset)
                     pic.Top = CSng(c.Top + (c.Height - pic.Height) / 2.0R)
@@ -7104,108 +7277,60 @@ Public Class Ribbon1
 
     Private Sub Tick3_Click(sender As Object, e As RibbonControlEventArgs) Handles Tick3.Click
         Dim app As Excel.Application = Globals.ThisAddIn.Application
-        Dim connector1 As Excel.Shape
-        Dim connector2 As Excel.Shape
-        Dim connector3 As Excel.Shape
-        Dim connector4 As Excel.Shape
+        Dim ws As Excel.Worksheet = TryCast(app.ActiveSheet, Excel.Worksheet)
+        If ws Is Nothing Then Exit Sub
+
         Dim r As Excel.Range
-
         Dim selection As String = app.Selection.Address(ReferenceStyle:=Excel.XlReferenceStyle.xlA1,
-                                        RowAbsolute:=False, ColumnAbsolute:=False)
-
+                                                    RowAbsolute:=False, ColumnAbsolute:=False)
         r = app.Range(selection)
 
-        connector1 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 5.8, r.Top + 2.7, r.Left + 8.8, r.Top + 8)
+        'marcação do Group9 (um id por clique)
+        Dim groupId As String = Guid.NewGuid().ToString("N")
+
+        Dim connector1 As Excel.Shape = ws.Shapes.AddConnector(
+        Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
+        r.Left + 5.8F, r.Top + 2.7F, r.Left + 8.8F, r.Top + 8.0F
+    )
         connector1.Line.ForeColor.RGB = RGB(255, 0, 0)
         connector1.Line.Weight = 1.15
+        TagGroup9Shape(connector1, groupId)
 
-        connector4 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 4.8, r.Top + 5.2, r.Left + 7.8, r.Top + 10.5)
+        Dim connector4 As Excel.Shape = ws.Shapes.AddConnector(
+        Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
+        r.Left + 4.8F, r.Top + 5.2F, r.Left + 7.8F, r.Top + 10.5F
+    )
         connector4.Line.ForeColor.RGB = RGB(255, 0, 0)
         connector4.Line.Weight = 1.15
+        TagGroup9Shape(connector4, groupId)
 
-        connector2 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 4.7, r.Top + r.Height - 1, r.Left + 7.7, r.Top + 3)
+        Dim connector2 As Excel.Shape = ws.Shapes.AddConnector(
+        Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
+        r.Left + 4.7F, r.Top + r.Height - 1.0F, r.Left + 7.7F, r.Top + 3.0F
+    )
         connector2.Line.ForeColor.RGB = RGB(255, 0, 0)
         connector2.Line.Weight = 1.15
+        TagGroup9Shape(connector2, groupId)
 
-        connector3 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 2.3, r.Top + r.Height - 6.5, r.Left + 4.8, r.Top + r.Height - 1)
+        Dim connector3 As Excel.Shape = ws.Shapes.AddConnector(
+        Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
+        r.Left + 2.3F, r.Top + r.Height - 6.5F, r.Left + 4.8F, r.Top + r.Height - 1.0F
+    )
         connector3.Line.ForeColor.RGB = RGB(255, 0, 0)
         connector3.Line.Weight = 1.15
+        TagGroup9Shape(connector3, groupId)
 
-        'Group the shp and the arrow
-        Dim MidObj As Object() = New Object() {connector1.Name, connector2.Name, connector3.Name, connector4.Name}
-        app.ActiveSheet.Shapes.Range(MidObj).Group()
-    End Sub
-
-    Private Sub FS_Click(sender As Object, e As RibbonControlEventArgs) Handles FS.Click
-        Dim app As Excel.Application = Globals.ThisAddIn.Application
-        Dim r As Excel.Range = TryCast(app.Selection, Excel.Range)
-        If r Is Nothing Then Exit Sub
-        If r.Areas.Count > 1 OrElse r.Cells.CountLarge <> 1 Then Exit Sub ' conservador: só 1 célula
-
-        Dim connector1 As Excel.Shape
-        Dim connector2 As Excel.Shape
-
-        ' Desenhar os conectores com coordenadas relativas à célula
-        connector1 = app.ActiveSheet.Shapes.AddConnector(
-        Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
-        r.Left + 5.8, r.Top + 2.7, r.Left + 10.8, r.Top + 14
-    )
-        connector1.Line.ForeColor.RGB = RGB(255, 0, 0)
-        connector1.Line.Weight = 1.3
-
-        connector2 = app.ActiveSheet.Shapes.AddConnector(
-        Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight,
-        r.Left + 2.4, r.Top + 5, r.Left + 6.2, r.Top + 3
-    )
-        connector2.Line.ForeColor.RGB = RGB(255, 0, 0)
-        connector2.Line.Weight = 1.3
-
-        ' Agrupar e reposicionar
-        Dim midObj As Object() = New Object() {connector1.Name, connector2.Name}
-        Dim grouped As Excel.Shape = app.ActiveSheet.Shapes.Range(midObj).Group()
-        grouped.Name = "FS_" & Guid.NewGuid().ToString("N") ' evita nomes repetidos
-        grouped.Placement = Excel.XlPlacement.xlMoveAndSize
-
-        ' Posicionar DENTRO da célula, encostado à direita
-        Dim innerOffset As Double = 3 ' margem interna (ajuste fino)
-        grouped.Left = r.Left + r.Width - grouped.Width - innerOffset
-        grouped.Top = r.Top + (r.Height - grouped.Height) / 2
-
-        ' Evitar que texto fique por baixo do FS:
-        ' - NÃO mexe no alinhamento
-        ' - Só aplica indent se alinhamento for Esquerda ou Geral (onde indent funciona)
+        'Agrupar (opcional)
         Try
-            Dim ha As Integer = CInt(r.HorizontalAlignment)
-
-            If ha = Excel.Constants.xlGeneral Then
-                If IsNumeric(r.Value2) Then
-                    ' número em "Geral": fixa à direita para permitir recuo pela direita
-                    r.HorizontalAlignment = Excel.Constants.xlRight
-                    r.HorizontalAlignment = Excel.Constants.xlRight
-                Else
-                    ' texto em "Geral": fixa à esquerda (visual igual ao "Geral" para texto)
-                    r.HorizontalAlignment = Excel.Constants.xlLeft
-                End If
-                ha = CInt(r.HorizontalAlignment)
-            End If
-
-            ' Recuo 2x (equivalente a clicar "Aumentar recuo" duas vezes)
-            If ha = Excel.Constants.xlLeft OrElse ha = Excel.Constants.xlRight Then
-                r.IndentLevel = Math.Min(15, CInt(r.IndentLevel) + 2)
-            End If
-
+            Dim midObj As Object() = New Object() {connector1.Name, connector2.Name, connector3.Name, connector4.Name}
+            ws.Shapes.Range(midObj).Group()
+            'Se quiser marcar o grupo também, dá pra tentar (não é obrigatório):
+            'Dim grp As Excel.Shape = ws.Shapes.Range(midObj).Group()
+            'TagGroup9Shape(grp, groupId)
         Catch
+            'se falhar o agrupamento, os shapes já estão marcados individualmente
         End Try
-
-
-
-
     End Sub
-
 
     Private Sub NotMaterial_Click(sender As Object, e As RibbonControlEventArgs) Handles NotMaterial.Click
         Dim app As Excel.Application = Globals.ThisAddIn.Application
