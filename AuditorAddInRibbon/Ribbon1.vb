@@ -11,7 +11,14 @@
 '          For the design And tell your friends/colleagues about it:)
 
 '-------------------------------------------------------------------------
+Imports System.ComponentModel
+Imports System.Drawing
+Imports System.Drawing.Imaging
+Imports System.IO
+Imports Microsoft.Office.Core
 Imports Microsoft.Office.Tools.Ribbon
+Imports Excel = Microsoft.Office.Interop.Excel
+
 
 Public Class Ribbon1
 
@@ -6964,37 +6971,135 @@ Public Class Ribbon1
             .font.bold = True
         End With
     End Sub
-
     Private Sub Tick2_Click(sender As Object, e As RibbonControlEventArgs) Handles Tick2.Click
         Dim app As Excel.Application = Globals.ThisAddIn.Application
-        Dim connector1 As Excel.Shape
-        Dim connector2 As Excel.Shape
-        Dim connector3 As Excel.Shape
-        Dim r As Excel.Range
+        Dim sel As Excel.Range = TryCast(app.Selection, Excel.Range)
+        If sel Is Nothing Then Exit Sub
 
-        Dim selection As String = app.Selection.Address(ReferenceStyle:=Excel.XlReferenceStyle.xlA1,
-                                        RowAbsolute:=False, ColumnAbsolute:=False)
+        Dim ws As Excel.Worksheet = TryCast(app.ActiveSheet, Excel.Worksheet)
+        If ws Is Nothing Then Exit Sub
 
-        r = app.Range(selection)
+        'Imagem do próprio botão Tick2 (Ribbon1.resx)
+        Dim img As System.Drawing.Image = Nothing
+        Try
+            Dim crm As New System.ComponentModel.ComponentResourceManager(GetType(Ribbon1))
+            img = TryCast(crm.GetObject("Tick2.Image"), System.Drawing.Image)
+        Catch
+            img = Nothing
+        End Try
+        If img Is Nothing Then Exit Sub
 
-        connector1 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 4.8, r.Top + 4.5, r.Left + 8.8, r.Top + 9.5)
-        connector1.Line.ForeColor.RGB = RGB(255, 0, 0)
-        connector1.Line.Weight = 1.2
+        Dim ratio As Double = CDbl(img.Width) / Math.Max(1.0R, CDbl(img.Height))
 
-        connector2 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 4.7, r.Top + r.Height - 1, r.Left + 7.7, r.Top + 3)
-        connector2.Line.ForeColor.RGB = RGB(255, 0, 0)
-        connector2.Line.Weight = 1.2
+        'Alvos (suporta seleção múltipla; mescladas viram topo-esquerda da MergeArea)
+        Dim targetCells As New List(Of Excel.Range)()
+        Dim keySet As New System.Collections.Generic.HashSet(Of String)(System.StringComparer.Ordinal)
 
-        connector3 = app.ActiveSheet.Shapes.Addconnector _
-(Microsoft.Office.Core.MsoConnectorType.msoConnectorStraight, r.Left + 2.3, r.Top + r.Height - 6.5, r.Left + 4.8, r.Top + r.Height - 1)
-        connector3.Line.ForeColor.RGB = RGB(255, 0, 0)
-        connector3.Line.Weight = 1.2
+        Try
+            For Each area As Excel.Range In sel.Areas
+                For Each cellObj As Object In area.Cells
+                    Dim c As Excel.Range = TryCast(cellObj, Excel.Range)
+                    If c Is Nothing Then Continue For
 
-        'Group the shp and the arrow
-        Dim MidObj As Object() = New Object() {connector1.Name, connector2.Name, connector3.Name}
-        app.ActiveSheet.Shapes.Range(MidObj).Group()
+                    If CBool(c.MergeCells) Then
+                        c = c.MergeArea.Cells(1, 1)
+                    End If
+
+                    Dim addr As String = c.Address(RowAbsolute:=False, ColumnAbsolute:=False)
+                    Dim cellKey As String = "TM|Tick2|" & addr
+
+                    If keySet.Add(cellKey) Then
+                        targetCells.Add(c)
+                    End If
+                Next
+            Next
+        Catch
+            Exit Sub
+        End Try
+
+        If targetCells.Count = 0 Then Exit Sub
+
+        'Remove ticks antigos só das células selecionadas (varre uma vez)
+        Try
+            For i As Integer = ws.Shapes.Count To 1 Step -1
+                Try
+                    Dim shp As Excel.Shape = ws.Shapes.Item(i)
+                    If shp Is Nothing Then Continue For
+
+                    Dim tag As String = shp.AlternativeText
+                    If Not String.IsNullOrEmpty(tag) AndAlso keySet.Contains(tag) Then
+                        shp.Delete()
+                    End If
+                Catch
+                End Try
+            Next
+        Catch
+        End Try
+
+        'Salvar PNG temporário uma vez (reuso)
+        Dim tmpPath As String = System.IO.Path.Combine(
+        System.IO.Path.GetTempPath(),
+        "tickmark_tick2_" & Guid.NewGuid().ToString("N") & ".png"
+    )
+
+        Try
+            Try
+                img.Save(tmpPath, System.Drawing.Imaging.ImageFormat.Png)
+            Catch
+                Using bmp As New System.Drawing.Bitmap(img)
+                    bmp.Save(tmpPath, System.Drawing.Imaging.ImageFormat.Png)
+                End Using
+            End Try
+
+            Dim prevScreenUpdating As Boolean = app.ScreenUpdating
+            app.ScreenUpdating = False
+
+            Try
+                Const innerOffset As Double = 3.0R
+
+                For Each c As Excel.Range In targetCells
+                    'Tamanho proporcional à altura
+                    Dim targetH As Double = Math.Max(8.0R, c.Height * 0.75R)
+                    Dim targetW As Double = targetH * ratio
+
+                    Dim maxW As Double = Math.Max(8.0R, c.Width * 0.45R)
+                    If targetW > maxW Then
+                        targetW = maxW
+                        targetH = targetW / ratio
+                    End If
+
+                    Dim addr As String = c.Address(RowAbsolute:=False, ColumnAbsolute:=False)
+                    Dim cellKey As String = "TM|Tick2|" & addr
+
+                    Dim pic As Excel.Shape = ws.Shapes.AddPicture(
+                    Filename:=tmpPath,
+                    LinkToFile:=Microsoft.Office.Core.MsoTriState.msoFalse,
+                    SaveWithDocument:=Microsoft.Office.Core.MsoTriState.msoCTrue,
+                    Left:=CSng(c.Left),
+                    Top:=CSng(c.Top),
+                    Width:=CSng(targetW),
+                    Height:=CSng(targetH)
+                )
+
+                    pic.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue
+                    pic.Placement = Excel.XlPlacement.xlMoveAndSize
+                    pic.AlternativeText = cellKey
+
+                    'ESQUERDA + centro vertical (estável com redimensionamento)
+                    pic.Left = CSng(c.Left + innerOffset)
+                    pic.Top = CSng(c.Top + (c.Height - pic.Height) / 2.0R)
+                Next
+
+            Finally
+                app.ScreenUpdating = prevScreenUpdating
+            End Try
+
+        Finally
+            Try
+                If System.IO.File.Exists(tmpPath) Then System.IO.File.Delete(tmpPath)
+            Catch
+            End Try
+        End Try
     End Sub
 
     Private Sub Tick3_Click(sender As Object, e As RibbonControlEventArgs) Handles Tick3.Click
