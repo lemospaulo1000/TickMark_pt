@@ -11,6 +11,56 @@
 '          For the design And tell your friends/colleagues about it:)
 
 '-------------------------------------------------------------------------
+'=========================================================
+' TICKMARK_Pt — PADRÃO OFICIAL PARA TODOS OS _Click (CONTRATO)
+'
+' SELEÇÃO / ALVOS
+' 1) Seleção múltipla: suportar sel.Areas (múltiplas áreas) e inserir em cada célula.
+' 2) Mescladas: se MergeCells=True, atuar só em MergeArea.Cells(1,1) (topo-esquerda).
+'    Usar HashSet para evitar duplicar inserção em merge/áreas.
+'
+' NÃO EMPILHAR
+' 3) Antes de inserir, remover tick anterior DO MESMO TIPO na mesma célula,
+'    identificado por AlternativeText = "TM|<TickId>|<CellAddr>".
+'
+' ANCORAGEM / POSICIONAMENTO
+' 4) Padrão: ancorado à ESQUERDA da célula + centralizado verticalmente.
+'    Left = cell.Left + innerOffset; Top = cell.Top + (cell.Height - shp.Height)/2.
+' 5) Placement obrigatório: shp.Placement = xlMoveAndSize (acompanhar célula).
+' 6) Não usar ancoragem à direita como padrão (instável com redimensionamento de coluna).
+'
+' TAMANHO
+' 7) Imagem: altura ~75% da célula; preservar proporção; limitar largura ~45% da célula.
+'
+' TAGGING OBRIGATÓRIO (PARA REMOÇÃO)
+' 8) AlternativeText: "TM|<TickId>|<CellAddr>" (obrigatório).
+' 9) Name (backup): "TM_<TickId>_..." (se falhar por colisão, ignorar; não quebrar).
+'
+' REMOÇÃO CENTRAL (ClearAllShape / Remove all)
+' 10) Apagar SOMENTE objetos do add-in:
+'     - TickMarks: AlternativeText começa com "TM|" OU Name começa com "TM_"
+'     - Group9: AlternativeText começa com "GP9|" OU Name começa com "GP9_"
+'     Nunca apagar shapes do usuário.
+'
+' RENDERIZAÇÃO (PREFERÊNCIA)
+' 11) Preferencial: ticks devem ser inseridos como IMAGEM do próprio botão do Ribbon
+'     (Ribbon1.resx) via ComponentResourceManager("<ControlName>.Image") + AddPicture (PNG temporário).
+' 12) Não escrever símbolos diretamente no conteúdo da célula (ex.: "✔") e não depender de fonte.
+' 13) TextBox (texto) só é permitido quando NÃO houver ícone próprio no Ribbon (exceção justificada).
+'
+' PARÂMETROS VISUAIS PADRÃO
+' 14) innerOffset padrão:
+'     - IMAGEM: Const innerOffset = 0.0R  (mais colado possível à borda esquerda)
+'     - TEXTO (TextBox): Const innerOffset = 1.0R (ajuste fino; pode variar por estética)
+' 15) TextBox (quando permitido): alinhar texto à esquerda dentro do box:
+'     box.TextFrame.HorizontalAlignment = xlHAlignLeft
+'     e usar box estreito (largura controlada) para evitar “folga” visual.
+'
+' REGRA EXTRA — Group9 / Work Paper
+' 16) Todo _Click do Group9 que crie linhas/formas/conectores deve taguear cada shape criado
+'     com GP9| e/ou GP9_ usando groupId único por clique (p/ ClearAllShape apagar corretamente).
+'=========================================================
+
 Imports System.ComponentModel
 Imports System.Drawing
 Imports System.Drawing.Imaging
@@ -52,29 +102,282 @@ Public Class Ribbon1
             .Font.Italic = True
         End With
     End Sub
-    Private Sub tick_Click(sender As Object, e As RibbonControlEventArgs) Handles tick.Click
-        Dim appCell As Object = Globals.ThisAddIn.Application.ActiveCell
-        Dim begValue As String = Globals.ThisAddIn.Application.ActiveCell.Value
-        With appCell
-            .Value = begValue & "✔"
-            .Font.Color = RGB(255, 0, 0)
-            .Font.Name = "Times New Roman"
-            .Font.Size = 12
-            .font.bold = True
-            .Font.Italic = True
-        End With
+    Private Sub Tick_Click(sender As Object, e As RibbonControlEventArgs) Handles tick.Click
+        Dim app As Excel.Application = Globals.ThisAddIn.Application
+        Dim sel As Excel.Range = TryCast(app.Selection, Excel.Range)
+        If sel Is Nothing Then Exit Sub
+
+        Dim ws As Excel.Worksheet = TryCast(app.ActiveSheet, Excel.Worksheet)
+        If ws Is Nothing Then Exit Sub
+
+        'Imagem do próprio botão tick (Ribbon1.resx)
+        Dim img As System.Drawing.Image = Nothing
+        Try
+            Dim crm As New System.ComponentModel.ComponentResourceManager(GetType(Ribbon1))
+            img = TryCast(crm.GetObject("tick.Image"), System.Drawing.Image)
+        Catch
+            img = Nothing
+        End Try
+        If img Is Nothing Then Exit Sub
+
+        Dim ratio As Double = CDbl(img.Width) / Math.Max(1.0R, CDbl(img.Height))
+
+        ' Alvos (multi-seleção e merge-aware)
+        Dim targetCells As New List(Of Excel.Range)()
+        Dim keySet As New HashSet(Of String)(StringComparer.Ordinal)
+
+        Try
+            For Each area As Excel.Range In sel.Areas
+                For Each cellObj As Object In area.Cells
+                    Dim c As Excel.Range = TryCast(cellObj, Excel.Range)
+                    If c Is Nothing Then Continue For
+                    If CBool(c.MergeCells) Then c = c.MergeArea.Cells(1, 1)
+
+                    Dim addr As String = c.Address(False, False)
+                    Dim cellKey As String = "TM|tick|" & addr
+                    If keySet.Add(cellKey) Then targetCells.Add(c)
+                Next
+            Next
+        Catch
+            Exit Sub
+        End Try
+
+        If targetCells.Count = 0 Then Exit Sub
+
+        ' Remover qualquer Tick / Tick2 / X existente na célula (FS não é removido)
+        Try
+            For Each c As Excel.Range In targetCells
+                For i As Integer = ws.Shapes.Count To 1 Step -1
+                    Try
+                        Dim shp As Excel.Shape = ws.Shapes.Item(i)
+                        If shp Is Nothing Then Continue For
+
+                        Dim tag As String = ""
+                        Dim nm As String = ""
+                        Try : tag = shp.AlternativeText : Catch : End Try
+                        Try : nm = shp.Name : Catch : End Try
+
+                        ' Apaga Tick, Tick2 ou X na célula
+                        If ((Not String.IsNullOrEmpty(tag) AndAlso
+                         (tag.StartsWith("TM|tick|") OrElse tag.StartsWith("TM|Tick2|") OrElse tag.StartsWith("TM|X|"))) _
+                        OrElse (Not String.IsNullOrEmpty(nm) AndAlso
+                                (nm.StartsWith("TM_tick_") OrElse nm.StartsWith("TM_Tick2_") OrElse nm.StartsWith("TM_X_")))) _
+                        AndAlso shp.TopLeftCell.Address(False, False) = c.Address(False, False) Then
+                            shp.Delete()
+                        End If
+                    Catch
+                    End Try
+                Next
+            Next
+        Catch
+        End Try
+
+        'Salvar PNG temporário
+        Dim tmpPath As String = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                "tickmark_tick_" & Guid.NewGuid().ToString("N") & ".png")
+        Try
+            Try
+                img.Save(tmpPath, System.Drawing.Imaging.ImageFormat.Png)
+            Catch
+                Using bmp As New System.Drawing.Bitmap(img)
+                    bmp.Save(tmpPath, System.Drawing.Imaging.ImageFormat.Png)
+                End Using
+            End Try
+
+            Dim prevScreenUpdating As Boolean = app.ScreenUpdating
+            app.ScreenUpdating = False
+
+            Try
+                Const innerOffset As Double = 0.0R
+
+                For Each c As Excel.Range In targetCells
+                    Dim targetH As Double = Math.Max(8.0R, c.Height * 0.75R)
+                    Dim targetW As Double = targetH * ratio
+                    Dim maxW As Double = Math.Max(8.0R, c.Width * 0.45R)
+                    If targetW > maxW Then
+                        targetW = maxW
+                        targetH = targetW / ratio
+                    End If
+
+                    Dim addr As String = c.Address(False, False)
+                    Dim cellKey As String = "TM|tick|" & addr
+
+                    Dim pic As Excel.Shape = ws.Shapes.AddPicture(
+                Filename:=tmpPath,
+                LinkToFile:=Microsoft.Office.Core.MsoTriState.msoFalse,
+                SaveWithDocument:=Microsoft.Office.Core.MsoTriState.msoCTrue,
+                Left:=CSng(c.Left),
+                Top:=CSng(c.Top),
+                Width:=CSng(targetW),
+                Height:=CSng(targetH)
+            )
+
+                    pic.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue
+                    pic.Placement = Excel.XlPlacement.xlMoveAndSize
+                    pic.AlternativeText = cellKey
+                    Try
+                        pic.Name = "TM_tick_" & addr.Replace("$", "").Replace(":", "_") & "_" & Guid.NewGuid().ToString("N").Substring(0, 6)
+                    Catch
+                    End Try
+
+                    pic.Left = CSng(c.Left + innerOffset)
+                    pic.Top = CSng(c.Top + (c.Height - pic.Height) / 2.0R)
+                Next
+
+            Finally
+                app.ScreenUpdating = prevScreenUpdating
+            End Try
+
+        Finally
+            Try
+                If System.IO.File.Exists(tmpPath) Then System.IO.File.Delete(tmpPath)
+            Catch
+            End Try
+        End Try
+        Try
+            ' Pega a última célula da seleção
+            Dim lastCell As Excel.Range = sel.Cells(sel.Cells.Count)
+            ' Move o cursor para a célula imediatamente abaixo
+            Dim nextCell As Excel.Range = lastCell.Offset(1, 0)
+            nextCell.Select()
+        Catch
+            ' Ignora qualquer erro (por exemplo, se estiver na última linha)
+        End Try
     End Sub
-    Private Sub Button1_Click(sender As Object, e As RibbonControlEventArgs) Handles Button1.Click
-        Dim appCell As Object = Globals.ThisAddIn.Application.ActiveCell
-        Dim begValue As String = Globals.ThisAddIn.Application.ActiveCell.Value
-        With appCell
-            .Value = begValue & "✗"
-            .Font.Color = RGB(255, 0, 0)
-            .Font.Name = "Times New Roman"
-            .Font.Size = 12
-            .font.bold = True
-            .Font.Italic = True
-        End With
+    Private Sub X_Click(sender As Object, e As RibbonControlEventArgs) Handles X.Click
+        Dim app As Excel.Application = Globals.ThisAddIn.Application
+        Dim sel As Excel.Range = TryCast(app.Selection, Excel.Range)
+        If sel Is Nothing Then Exit Sub
+
+        Dim ws As Excel.Worksheet = TryCast(app.ActiveSheet, Excel.Worksheet)
+        If ws Is Nothing Then Exit Sub
+
+        Dim tickId As String = "X"
+
+        ' Multi-seleção e merge-aware
+        Dim targetCells As New List(Of Excel.Range)()
+        Dim keySet As New HashSet(Of String)(StringComparer.Ordinal)
+
+        For Each area As Excel.Range In sel.Areas
+            For Each cellObj As Object In area.Cells
+                Dim c As Excel.Range = TryCast(cellObj, Excel.Range)
+                If c Is Nothing Then Continue For
+                If CBool(c.MergeCells) Then c = c.MergeArea.Cells(1, 1)
+                Dim cellKey As String = "TM|" & tickId & "|" & c.Address(False, False)
+                If keySet.Add(cellKey) Then targetCells.Add(c)
+            Next
+        Next
+
+        If targetCells.Count = 0 Then Exit Sub
+
+        ' Remover qualquer Tick / Tick2 / X existente na célula (FS não é removido)
+        Try
+            For Each c As Excel.Range In targetCells
+                For i As Integer = ws.Shapes.Count To 1 Step -1
+                    Try
+                        Dim shp As Excel.Shape = ws.Shapes.Item(i)
+                        If shp Is Nothing Then Continue For
+
+                        Dim tag As String = ""
+                        Dim nm As String = ""
+                        Try : tag = shp.AlternativeText : Catch : End Try
+                        Try : nm = shp.Name : Catch : End Try
+
+                        ' Verifica TM|tick, TM|Tick2, TM|X e os nomes TM_tick_, TM_Tick2_, TM_X_
+                        If ((Not String.IsNullOrEmpty(tag) AndAlso
+                         (tag.StartsWith("TM|tick|") OrElse tag.StartsWith("TM|Tick2|") OrElse tag.StartsWith("TM|X|"))) _
+                        OrElse (Not String.IsNullOrEmpty(nm) AndAlso
+                                (nm.StartsWith("TM_tick_") OrElse nm.StartsWith("TM_Tick2_") OrElse nm.StartsWith("TM_X_")))) _
+                        AndAlso shp.TopLeftCell.Address(False, False) = c.Address(False, False) Then
+                            shp.Delete()
+                        End If
+                    Catch
+                        ' Ignorar erro
+                    End Try
+                Next
+            Next
+        Catch
+        End Try
+
+        ' Inserir X como TextBox
+        Dim prevScreenUpdating As Boolean = app.ScreenUpdating
+        app.ScreenUpdating = False
+
+        Try
+            Const innerOffset As Double = 0.5R
+
+            For Each c As Excel.Range In targetCells
+                Dim addr As String = c.Address(False, False)
+                Dim cellKey As String = "TM|" & tickId & "|" & addr
+
+                Dim targetH As Double = Math.Max(12.0R, c.Height * 0.75R)
+                Dim targetW As Double = targetH ' quadrado para o X
+                Dim maxW As Double = Math.Max(12.0R, c.Width * 0.45R)
+                If targetW > maxW Then targetW = maxW
+
+                Dim box As Excel.Shape = ws.Shapes.AddTextbox(
+                Orientation:=Microsoft.Office.Core.MsoTextOrientation.msoTextOrientationHorizontal,
+                Left:=CSng(c.Left),
+                Top:=CSng(c.Top),
+                Width:=CSng(targetW),
+                Height:=CSng(targetH)
+            )
+
+                Try
+                    box.TextFrame.Characters.Text = "X"
+                    box.TextFrame.HorizontalAlignment = Excel.XlHAlign.xlHAlignLeft
+                    box.TextFrame.VerticalAlignment = Excel.XlVAlign.xlVAlignCenter
+                    box.TextFrame.AutoSize = False
+
+                    ' Margens internas zeradas
+                    Try
+                        box.TextFrame.MarginLeft = 0
+                        box.TextFrame.MarginRight = 0
+                        box.TextFrame.MarginTop = 0
+                        box.TextFrame.MarginBottom = 0
+                    Catch
+                    End Try
+
+                    Try : box.TextFrame.WordWrap = False : Catch : End Try
+
+                    ' Fonte / estilo
+                    box.TextFrame.Characters.Font.Bold = True
+                    box.TextFrame.Characters.Font.Color = RGB(255, 0, 0)
+                Catch
+                    Try : box.Delete() : Catch : End Try
+                    Continue For
+                End Try
+
+                ' Sem borda / preenchimento
+                Try : box.Line.Visible = Microsoft.Office.Core.MsoTriState.msoFalse : Catch : End Try
+                Try : box.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoFalse : Catch : End Try
+
+                ' Placement e tagging
+                Try : box.Placement = Excel.XlPlacement.xlMoveAndSize : Catch : End Try
+                Try : box.AlternativeText = cellKey : Catch : End Try
+                Try
+                    Dim safeAddr As String = addr.Replace("$", "").Replace(":", "_")
+                    box.Name = "TM_X_" & safeAddr & "_" & Guid.NewGuid().ToString("N").Substring(0, 6)
+                Catch
+                End Try
+
+                ' Posição final: esquerda + centro vertical
+                box.Left = CSng(c.Left + innerOffset)
+                box.Top = CSng(c.Top + (c.Height - box.Height) / 2.0R)
+            Next
+
+        Finally
+            app.ScreenUpdating = prevScreenUpdating
+        End Try
+        Try
+            ' Pega a última célula da seleção
+            Dim lastCell As Excel.Range = sel.Cells(sel.Cells.Count)
+            ' Move o cursor para a célula imediatamente abaixo
+            Dim nextCell As Excel.Range = lastCell.Offset(1, 0)
+            nextCell.Select()
+        Catch
+            ' Ignora qualquer erro (por exemplo, se estiver na última linha)
+        End Try
     End Sub
 
     Private Sub FontName1_Click(sender As Object, e As RibbonControlEventArgs) Handles FontName1.Click
@@ -285,7 +588,7 @@ Public Class Ribbon1
         Dim Top As Double = appCell.Top
 
         Dim location As Object
-        location = app.inputbox("Select a cell", "Drawing an arrow", Type:=8)
+        location = app.inputbox("Selecione uma célula", "Desenhando uma seta", Type:=8)
         On Error Resume Next
         'The user clicks the  cancel button.
         If location.address = " " Then
@@ -686,7 +989,7 @@ Public Class Ribbon1
             .Value = begValue & "AJE<>"
             .Font.Color = RGB(255, 0, 0)
             .Font.Name = "Book Antiqua"
-            .Font.Size = 12
+            .Font.Size = 10
             .font.bold = True
         End With
     End Sub
@@ -699,7 +1002,7 @@ Public Class Ribbon1
             .Value = begValue & "RJE<>"
             .Font.Color = RGB(255, 0, 0)
             .Font.Name = "Book Antiqua"
-            .Font.Size = 12
+            .Font.Size = 10
             .font.bold = True
         End With
     End Sub
@@ -897,13 +1200,14 @@ Public Class Ribbon1
     End Sub
 
     Private Sub CommaStyle_Click(sender As Object, e As RibbonControlEventArgs) Handles CommaStyle.Click
-        Dim app As Object = Globals.ThisAddIn.Application
-        Dim number As Double = app.Activecell.value
-        If number >= 0 Then
-            app.Selection.NumberFormatLocal = "_-* #,##0_-;-* #,##0_-;_-* ""-""??_-;_-@_-"
-        Else
-            app.Selection.NumberFormatLocal = "#,##0_);(#,##0)"
-        End If
+
+        Dim app As Excel.Application = Globals.ThisAddIn.Application
+        Dim rng As Excel.Range = TryCast(app.Selection, Excel.Range)
+
+        If rng Is Nothing Then Exit Sub
+
+        rng.NumberFormatLocal = "#.##0,00"
+
     End Sub
 
     Private Sub InsertColumn_Click(sender As Object, e As RibbonControlEventArgs) Handles InsertColumn.Click
@@ -922,8 +1226,8 @@ Public Class Ribbon1
         Dim time As Date = Now
 
         username = app.UserName
-        submit = "Prepared by" & " " & username & " " & "on " & time.Month _
-                                                              & "/" & time.Day _
+        submit = "Elaborado por" & " " & username & " " & "em " & time.Day _
+                                                              & "/" & time.Month _
                                                               & "/" & time.Year
 
         With app.ActiveCell
@@ -942,8 +1246,8 @@ Public Class Ribbon1
         Dim time As Date = Now
 
         username = app.UserName
-        review = "Reviewed by" & " " & username & " " & "on " & time.Month _
-                                                              & "/" & time.Day _
+        review = "Revisado por" & " " & username & " " & "em " & time.Day _
+                                                              & "/" & time.Month _
                                                               & "/" & time.Year
 
         With app.ActiveCell
@@ -1066,2704 +1370,2699 @@ Public Class Ribbon1
         Dim value As Integer = Int((900 * Rnd()) + 1)
         Select Case value
             Case 1
-                Quote = "The bird who dares to fall is the bird who learns to fly."
+                Quote = "O pássaro que se arrisca a cair é o pássaro que aprende a voar."
                 Exit Select
             Case 2
-                Quote = "Work hard in silence. Let success be your noise."
+                Quote = "Trabalhe duro em silêncio. Deixe o sucesso fazer barulho."
                 Exit Select
             Case 3
-                Quote = "One of the hardest decisions you'll ever face in life is choosing whether to walk away or try harder. - Ziad K. Abdelnour"
+                Quote = "Uma das decisões mais difíceis da vida é escolher entre ir embora ou tentar mais uma vez. - Ziad K. Abdelnour"
                 Exit Select
             Case 4
-                Quote = "As long as you think your past is bad you must be improving. - Louis C.K."
+                Quote = "Enquanto você achar que seu passado foi ruim, é sinal de que você está melhorando. - Louis C.K."
                 Exit Select
             Case 5
-                Quote = "And if i asked you to name all the things that you love, how long would it take for you to name yourself."
+                Quote = "E se eu te pedisse para listar tudo o que você ama… quanto tempo levaria até você se incluir?"
                 Exit Select
             Case 6
-                Quote = "Behind every successful person, there is a lot of unsuccessful years."
+                Quote = "Daqui a um ano, você vai desejar ter começado hoje."
                 Exit Select
             Case 7
-                Quote = "You know, sometimes all you need is twenty seconds of insane courage. Just literally twenty seconds of just embarrassing bravery and I promise you, something great will come of it."
+                Quote = "Pare de ter medo do que pode dar errado e comece a se empolgar com o que pode dar certo."
                 Exit Select
             Case 8
-                Quote = "If you want something you've never had, then you've got to do something you've never done."
+                Quote = "Você não precisa ver a escada inteira; apenas dê o primeiro passo. - Martin Luther King Jr."
                 Exit Select
             Case 9
-                Quote = "Remember, time you enjoy wasting is not time wasted."
+                Quote = "Acredite que você pode — e você já está no meio do caminho. - Theodore Roosevelt"
                 Exit Select
             Case 10
-                Quote = "I will not let my sense of pride keep me from appreciating an act of kindness."
+                Quote = "O sucesso é a soma de pequenos esforços repetidos dia após dia. - Robert Collier"
                 Exit Select
             Case 11
-                Quote = "The more you learn, the less you feel like you know."
+                Quote = "Disciplina é escolher entre o que você quer agora e o que você quer mais. - Abraham Lincoln"
                 Exit Select
             Case 12
-                Quote = "The greatest pleasure in life is doing what people say you cannot do."
+                Quote = "Não espere por oportunidade. Crie a oportunidade."
                 Exit Select
             Case 13
-                Quote = "I'd always end up broken down on the highway. When I stood there trying to flag someone down, nobody stopped. But when I pushed my own car, other drivers would get out and push with me. If you want help, help youreself - people like to see that. - Chris Rock"
+                Quote = "Sonhos não funcionam a menos que você trabalhe por eles."
                 Exit Select
             Case 14
-                Quote = "If it is important to you, you will find a way. If not, you'll find an excuse."
+                Quote = "Faça hoje o que os outros não fazem, para amanhã fazer o que os outros não conseguem."
                 Exit Select
             Case 15
-                Quote = "Some people died at 25 and aren't burned until 75."
+                Quote = "Se você cansar, descanse. Só não desista."
                 Exit Select
             Case 16
-                Quote = "Listen, smile, agree, and then do whatever the fuck you were gonna do anyway."
+                Quote = "Pequenos progressos todos os dias geram grandes resultados."
                 Exit Select
             Case 17
-                Quote = "When life gives you lemons, EAT THEM WHOLE. Seriously. Just choke them all down... skin, pulp, seeds and all and don't break eye contact. Maybe life will stop being suck an asshole if yhou show it that youre done fucking around."
+                Quote = "A única pessoa que você deve tentar superar é quem você foi ontem."
                 Exit Select
             Case 18
-                Quote = "BE BRAVE. Even if you're not, pretend to be."
+                Quote = "A dor que você sente hoje será a força que você terá amanhã."
                 Exit Select
             Case 19
-                Quote = "We can't be everything to everyone, but we can be something to someone ... even a lot of someones."
+                Quote = "O que você faz hoje pode melhorar todos os seus amanhãs."
                 Exit Select
             Case 20
-                Quote = "Generosity is giving without expecting anything in return."
+                Quote = "Você não precisa ser ótimo para começar, mas precisa começar para ser ótimo."
                 Exit Select
             Case 21
-                Quote = "When we have a clear sense of where we are going, we are flexible in how we get there."
+                Quote = "Seja mais forte do que suas desculpas."
                 Exit Select
             Case 22
-                Quote = "Dream big. Start small. But most of all … Start."
+                Quote = "Não pare quando estiver cansado. Pare quando terminar."
                 Exit Select
             Case 23
-                Quote = "Your time is limited, so don't waste it living someone else's life.  -Steve Jobs"
+                Quote = "A persistência transforma o impossível em possível."
                 Exit Select
             Case 24
-                Quote = "Don't be trapped by dogma - which is living with the results of other people's thinking.  -Steve Jobs"
+                Quote = "Acredite no processo."
                 Exit Select
             Case 25
-                Quote = "Don't let the noise of other's opinions drown out your own inner voice.  -Steve Jobs"
+                Quote = "Não desista só porque está difícil. Difícil é o que faz valer a pena."
                 Exit Select
             Case 26
-                Quote = "And most important, have the courage to follow your heart and intuition. They somehow already know what you truly want to become. Everything else is secondary.  -Steve Jobs"
+                Quote = "O medo é temporário. O arrependimento dura."
                 Exit Select
             Case 27
-                Quote = "If you don't follow your heart, you might spend the rest of your time wishing you had."
+                Quote = "Você é capaz de mais do que imagina."
                 Exit Select
             Case 28
-                Quote = "Don't die before you're dead."
+                Quote = "Tudo o que você quer está do outro lado do esforço."
                 Exit Select
             Case 29
-                Quote = "You're not a loser. You know what a loser is? A real loser is somebody that's so afraid of not winning, they don't even try."
+                Quote = "Ação cura o medo."
                 Exit Select
             Case 30
-                Quote = "Life has no smooth road for any us. As we go down it, we need to remember that happiness is a talent we develop, not an object we seek. It's the ability to bounce back from life's inevitable setbacks. Some people are crushed by misfortune. Others grow because of it."
+                Quote = "Faça acontecer."
                 Exit Select
             Case 31
-                Quote = "IT'S OKAY TO HAVE A BAD DAY."
+                Quote = "Você não precisa de motivação; precisa de compromisso."
                 Exit Select
             Case 32
-                Quote = "A ship in the harbor is safe, but that's not what ships are for."
+                Quote = "Comece onde você está. Use o que você tem. Faça o que você pode. - Arthur Ashe"
                 Exit Select
             Case 33
-                Quote = "I understand there's a guy inside me who wants to lay in bed, smoke weed all day, and watch cartoons and old movies. My whole life is a series of stratagems to avoid, and outwit, that guy. - Anthony Bourdain"
+                Quote = "A melhor forma de prever o futuro é criá-lo. - Peter Drucker"
                 Exit Select
             Case 34
-                Quote = "We all must suffer one of two things: the pain of discipline or the pain of regret."
+                Quote = "Um dia ou dia um. Você escolhe."
                 Exit Select
             Case 35
-                Quote = "Stop being afraid of what could go wrong, and start being excited about what could go right."
+                Quote = "Foque no progresso, não na perfeição."
                 Exit Select
             Case 36
-                Quote = "It gets easier. Every day, it gets a little easier. But you gotta do it every day. That's the hard part. But it does get easier."
+                Quote = "Sua zona de conforto é uma ótima lugar, mas nada cresce lá."
                 Exit Select
             Case 37
-                Quote = "You have survived every single bad day so far."
+                Quote = "Se você quer resultados diferentes, faça coisas diferentes."
                 Exit Select
             Case 38
-                Quote = "Please pay sttention very carefully, because this is the truest thing a stranger will ever say to you: In the face of such hopelessness as our eventual, unavoidable death, there is little sense in not at least TRYING to accomplish all your wildest dreams in life. - Kevin Smith"
+                Quote = "Não compare seus bastidores com o palco de alguém."
                 Exit Select
             Case 39
-                Quote = "Some say they stay up late because they're delaying tomorrow. I stay up late Because I'm not done with today."
+                Quote = "Continue. Mesmo devagar, continue."
                 Exit Select
             Case 40
-                Quote = "I know people who graduated college at 21 and didn't get a salary job until they were 27. I know people who have children and are single, I know people who are married and had to wait 8-10 years to be parents. I know people who are in a relationship and love someone else, I know people who love each other and aren't together, there are people waiting to love and be loved. My point is, everything in life happens according to our time, our clock. You may look at your friends and some may seem to be ahead or behind you, but they are not, they are living according to the pace of their clock, so be patient. You are not falling behind, it's just not your time."
+                Quote = "O que importa é a constância."
                 Exit Select
             Case 41
-                Quote = "To the world you may be one person, but to one person you may be the world."
+                Quote = "Você vence quando não desiste."
                 Exit Select
             Case 42
-                Quote = "For what it's worth: It's never too late to be whoever you want to be. I hope you live a life you're proud of, and if you find that you're not, I hope you have the strength to start over."
+                Quote = "Você não falha; você aprende."
                 Exit Select
             Case 43
-                Quote = "Just because you took longer than others, doesn't mean you failed. Remember that."
+                Quote = "A cada dia, um pouco melhor."
                 Exit Select
             Case 44
-                Quote = "When something is important enough, you do it even if the odds are not in your favor. - Elon Musk"
+                Quote = "A mente acredita no que você repete."
                 Exit Select
             Case 45
-                Quote = "Sometimes you just have to chuck it in the fuck it bucket and move on."
+                Quote = "Você não é suas circunstâncias; você é suas escolhas."
                 Exit Select
             Case 46
-                Quote = "You have $86,400 in your account and someone stole $10 from you, would you be upset and throw all of the $86,390 away in hopes of getting back at the person that took your $10? Or move on and live? Right, move on and live. See, we have 86,400 secs in every day so don't let someone's negative 10 seconds ruin the rest of the 86,390. Don't sweat the small stuff, life is bigger than that."
+                Quote = "Treine até ficar inevitável."
                 Exit Select
             Case 47
-                Quote = "Service to others is the rent you pay for your room here on Earth. - Muhammad Ali"
+                Quote = "A disciplina vai te levar onde a motivação não alcança."
                 Exit Select
             Case 48
-                Quote = "Don't worry if people don't like you. Most people are struggling to like themselves."
+                Quote = "Não deixe para amanhã o passo que você pode dar hoje."
                 Exit Select
             Case 49
-                Quote = "Don't cling to a mistake just because you spent a lot of time making it."
+                Quote = "O esforço de hoje é o resultado de amanhã."
                 Exit Select
             Case 50
-                Quote = "And so rock bottom became the solid foundation on which I rebuilt my life. - J.K. Rowling"
+                Quote = "Você só perde quando desiste."
                 Exit Select
             Case 51
-                Quote = "If it falls your lot to be a street sweeper, sweep streets like Michelangelo painted pictures, sweep streets like Beethoven composed music, sweep streets like Leontyne Price sings before the Metropolitan Opera. Sweep streets like Shakespeare wrote poetry. Sweep streets so well that all the hosts of heaven and earth will have to pause and say: Here lived a great street sweeper who swept his job well. If you can’t be a pine at the top of the hill, be a shrub in the valley. Be be the best little shrub on the side of the hill. - Dr. Martin Luther King Jr"
+                Quote = "Seja paciente. Grandes coisas levam tempo."
                 Exit Select
             Case 52
-                Quote = "One day or day one. You decide."
+                Quote = "Se for importante pra você, você vai dar um jeito. Se não for, vai arrumar uma desculpa."
                 Exit Select
             Case 53
-                Quote = "Dude, suckin' at something is the first step to being sorta good at something."
+                Quote = "Seja consistente, não perfeito."
                 Exit Select
             Case 54
-                Quote = "The pessimist complains about the wind; the optimist expects it to change; the realist adjusts the sails. - William A. Ward"
+                Quote = "Faça o básico bem feito — todos os dias."
                 Exit Select
             Case 55
-                Quote = "I've missed more the 9,000 shots in my career. I've lost almost 300 games. 26 times I've been trusted to take the game winning shot and missed. I've failed over and over and over again in my life. And that is why I succeed. - Michael Jordan"
+                Quote = "Você está mais perto do que pensa."
                 Exit Select
             Case 56
-                Quote = "Don't think about what can happen in a month . Don't think about what can happen in a year. Just focus on the 24 hours in front of you and do what you can to get closer to where you want to be."
+                Quote = "A coragem não é ausência de medo; é agir apesar do medo."
                 Exit Select
             Case 57
-                Quote = "The human being is meant to bear the burden of 24 hours -- no more, no less."
+                Quote = "A diferença entre quem consegue e quem não consegue é a persistência."
                 Exit Select
             Case 58
-                Quote = "Happiness is not something you can pursue - but instead the byproduct of doing the right thing."
+                Quote = "Cada repetição conta."
                 Exit Select
             Case 59
-                Quote = "The world's idea of success is total shit."
+                Quote = "Sem pressão, não há crescimento."
                 Exit Select
             Case 60
-                Quote = "If you can survive disappointment, then nothing can beat you. - Louis C.K."
+                Quote = "Você não precisa de mais tempo; precisa de mais prioridade."
                 Exit Select
             Case 61
-                Quote = "A river cuts through rock, not because of its power, but because of its persistence. - Jim Watkins"
+                Quote = "A motivação te coloca em movimento; o hábito te mantém em movimento."
                 Exit Select
             Case 62
-                Quote = "Talent is nothing more than a pursued interest - Bob Ross"
+                Quote = "Faça o que tem que ser feito, mesmo quando você não estiver a fim."
                 Exit Select
             Case 63
-                Quote = "When it feels scary to jump, that is exactly when you jump. Otherwise, you end up staying in the same place your whole life."
+                Quote = "Grandes resultados vêm de pequenas decisões diárias."
                 Exit Select
             Case 64
-                Quote = "If I quit now, I will soon be back to where I started, and when I started, I was desperately wishing to be where I am now."
+                Quote = "Você não tem que ver o final para dar o primeiro passo."
                 Exit Select
             Case 65
-                Quote = "The happiest people don't have the best of everything, they just make the best of everything."
+                Quote = "O fracasso é apenas um passo a caminho do sucesso."
                 Exit Select
             Case 66
-                Quote = "In case no one has told you today. Or when you're needed to hear it. You are loved. You are beautiful. You are important. You are forgiven. "
+                Quote = "Pense grande, comece pequeno, aja agora."
                 Exit Select
             Case 67
-                Quote = "We all have two fates. One Is the result of whatever mess you were born into, And one Is the result of deciding that's just not fucking good enough."
+                Quote = "Se você quer algo que nunca teve, precisa fazer algo que nunca fez."
                 Exit Select
             Case 68
-                Quote = "Stop waiting for Friday, for summer, for someone to fall in love with you, for life. Happiness is achieved when you stop waiting for it and make the most of the moment you're in right now."
+                Quote = "A disciplina é liberdade."
                 Exit Select
             Case 69
-                Quote = "If you chase two rabbits, you will not catch either one."
+                Quote = "Você se torna aquilo que pratica."
                 Exit Select
             Case 70
-                Quote = "Don't settle. Don't finish bad books. If you don't like the menu, leave the restaurant. If you're not on the right path, get off."
+                Quote = "Seja a energia que você quer atrair."
                 Exit Select
             Case 71
-                Quote = "Be decisive. Right or wrong, make a decision. The road of life is paved with flat squirrels who couldn't make a decision."
+                Quote = "Você consegue. Só continua."
                 Exit Select
             Case 72
-                Quote = "If you don't design your own life plan, chances are you'll fall into someone else's plan. And guess what they have planned for you? Not much. - Jim Rohn"
+                Quote = "O seu futuro precisa de você hoje."
                 Exit Select
             Case 73
-                Quote = "I never lose. I either win or learn. - Nelson Mandela"
+                Quote = "O melhor investimento é em você."
                 Exit Select
             Case 74
-                Quote = "I always wonder why birds stay in the same place when they can fly anywhere on the earth. Then I ask myself the same question. - Harun Yahya"
+                Quote = "Faça por você."
                 Exit Select
             Case 75
-                Quote = "I wonder if we might pledge ourselves to remember what life is really all about - not to be afraid that we're less flashy than the next, not to worry that our influence is not that of a tornado, but rather that of a grain of sand in an oyster! Do we have that kind of patience? - Fred Rogers"
+                Quote = "O esforço sempre volta em resultado."
                 Exit Select
             Case 76
-                Quote = "These mountains that you are carrying you were only supposed to climb."
+                Quote = "É no desconforto que você evolui."
                 Exit Select
             Case 77
-                Quote = "The same boiling water that softens the potato, hardens the egg. It's about what you're made of, not the circumstances."
+                Quote = "Seja teimoso com o objetivo, flexível com o caminho."
                 Exit Select
             Case 78
-                Quote = "This is your life and you're writing your story. Don’t ever let someone else hold the pen."
+                Quote = "Fé e ação: as duas juntas."
                 Exit Select
             Case 79
-                Quote = "I constantly get out of my comfort zone. Looking cool is the easiest way to mediocrity. The coolest guy in my high school ended up working at a car wash. Once you push yourself into something new, and whole new world of opportunities opens up. But you might get hurt. In fact you will get hurt. But amazingly when you heal – you are somewhere you’ve never been. - Terry Crews"
+                Quote = "Não espere se sentir pronto. Comece e fique pronto no caminho."
                 Exit Select
             Case 80
-                Quote = "Make it happen now, not tomorrow. Tomorrow is a loser's excuse."
+                Quote = "O que você repete vira padrão."
                 Exit Select
             Case 81
-                Quote = "Whatever you're thinking, think bigger. - Tony Hsieh"
+                Quote = "Você não está atrasado; você está no seu tempo."
                 Exit Select
             Case 82
-                Quote = "You never fail until you stop trying. - Albert Einstein"
+                Quote = "Você é mais forte do que pensa."
                 Exit Select
             Case 83
-                Quote = "If you want to live a happy life, tie it to a goal, not to people or things. - Albert Einstein"
+                Quote = "Faça o que é certo, não o que é fácil."
                 Exit Select
             Case 84
-                Quote = "A clever person solves a problem. A wise person avoids it. - Albert Einstein"
+                Quote = "Todo dia conta."
                 Exit Select
             Case 85
-                Quote = "Once we accept our limits, we go beyond them. - Albert Einstein"
+                Quote = "A melhor hora para começar foi ontem. A segunda melhor é agora."
                 Exit Select
             Case 86
-                Quote = "Everybody is a genius. But if you judge a fish by its ability to climb a tree, it will live its whole life believing that it is stupid. - Albert Einstein"
+                Quote = "A constância vence o talento quando o talento não é constante."
                 Exit Select
             Case 87
-                Quote = "In the middle of difficulty lies opportunity. - Albert Einstein"
+                Quote = "Seja disciplina, não desculpa."
                 Exit Select
             Case 88
-                Quote = "Life is like riding a bicycle. To keep your balance, you must keep moving. - Albert Einstein"
+                Quote = "Se o plano não funcionar, mude o plano — não a meta."
                 Exit Select
             Case 89
-                Quote = "I must be willing to give up what I am  in order to become what I will be. - Albert Einstein"
+                Quote = "Continue mesmo quando ninguém estiver vendo."
                 Exit Select
             Case 90
-                Quote = "I have no special talents. I am only passionately curious. - Albert Einstein"
+                Quote = "Você não precisa de sorte; precisa de rotina."
                 Exit Select
             Case 91
-                Quote = "Anyone who has never made a mistake has never tried anything new. - Albert Einstein"
+                Quote = "Aprenda a ser consistente com você."
                 Exit Select
             Case 92
-                Quote = "Common sense is what tells us the earth is flat. - Albert Einstein"
+                Quote = "Não negocie com a preguiça."
                 Exit Select
             Case 93
-                Quote = "Try not to become a man of success. Rather become a man of value. - Albert Einstein"
+                Quote = "O que você tolera, você mantém."
                 Exit Select
             Case 94
-                Quote = "The mind that opens to a new idea never returns to its original size."
+                Quote = "Quem quer dá um jeito; quem não quer, dá uma desculpa."
                 Exit Select
             Case 95
-                Quote = "Life is like riding a bicycle. To keep your balance, you must keep moving. - Albert Einstein"
+                Quote = "Sem esforço, sem resultado."
                 Exit Select
             Case 96
-                Quote = "Life begins at the end of your comfort zone. - Neale Donald Walsch"
+                Quote = "O corpo conquista o que a mente decide."
                 Exit Select
             Case 97
-                Quote = "Two things define you: Your patience when you have nothing and your attitude when you have everything."
+                Quote = "Você não precisa ser perfeito. Precisa ser constante."
                 Exit Select
             Case 98
-                Quote = "Never give up on a dream just because of the time it will take to accomplish it. The time will pass anyway. - Earl Nightingale"
+                Quote = "Foco. Força. Fé."
                 Exit Select
             Case 99
-                Quote = "If people are not laughing at your goals, your goals are too small. - Azim Premji"
+                Quote = "Acredite, trabalhe, conquiste."
                 Exit Select
             Case 100
-                Quote = "You don't have to be great to start, but you have to start to be great. - Zig Ziglar"
+                Quote = "O difícil de hoje é o forte de amanhã."
                 Exit Select
             Case 101
-                Quote = "I am not what happened to me, I am what I choose to become. - Carl Gustav Jung"
+                Quote = "Se você quer mudar, comece com um passo."
                 Exit Select
             Case 102
-                Quote = "An entire sea of water can't sink a ship unless it gets inside the ship. Similarly, the negativity of the world can't put you down unless you allow it to get inside you. - Goi Nasu"
+                Quote = "A disciplina te coloca onde o sonho sozinho não chega."
                 Exit Select
             Case 103
-                Quote = "Great minds discuss ideas. Average minds discuss events. Small minds discuss people. - Eleanor Roosevelt"
+                Quote = "Menos desculpas, mais ação."
                 Exit Select
             Case 104
-                Quote = "It does not matter how slowly you go as long as you do not stop."
+                Quote = "Você não precisa de permissão para crescer."
                 Exit Select
             Case 105
-                Quote = "Hard work beats talent when talent doesn't work hard. - Tim Notke"
+                Quote = "Você não é fraco; você só está começando."
                 Exit Select
             Case 106
-                Quote = "Doubt kills more dreams than failure ever will. - Suzy Kassem"
+                Quote = "Chega de adiar: faça."
                 Exit Select
             Case 107
-                Quote = "Knowing is not enough, we must apply. Willing is not enough, we must do. - Bruce Lee"
+                Quote = "O melhor projeto é você."
                 Exit Select
             Case 108
-                Quote = "The first step to getting anywhere is deciding you're no longer willing to stay where you are."
+                Quote = "Você vai se agradecer por não ter parado."
                 Exit Select
             Case 109
-                Quote = "A year from now you may wish you had started today. - Karen Lamb"
+                Quote = "Cada dia é uma chance de recomeçar."
                 Exit Select
             Case 110
-                Quote = "The activity you're most avoding contains your biggest opportunity. - Robin S. Sharma"
+                Quote = "O sucesso é treinável."
                 Exit Select
             Case 111
-                Quote = "The master has failed more times than the beginner has even tried. - Stephen McCranie"
+                Quote = "Sua melhor versão exige consistência."
                 Exit Select
             Case 112
-                Quote = "The world is changed by your example, not by your opinion.- Paulo Coelho"
+                Quote = "Faça o que precisa ser feito, e o resultado vem."
                 Exit Select
             Case 113
-                Quote = "I hated every minute of training, but I said, 'Don't quit. Suffer now and live the rest of your life as a champion'. - Muhammad Ali"
+                Quote = "A vitória começa na decisão."
                 Exit Select
             Case 114
-                Quote = "If you don't make the time to work on creating the life you want, you're eventually going to be forced to spend a lot of time dealing with a life you don't want. - Kevin Ngo"
+                Quote = "Um passo de cada vez — mas sem parar."
                 Exit Select
             Case 115
-                Quote = "When someone tells me ""no,"" it doesn't mean I can't do it, it simply means I can't do it with them. - Karen E. Quinones Miller"
+                Quote = "Trabalhe no silêncio; deixe os resultados falarem."
                 Exit Select
             Case 116
-                Quote = "When you want to succeed as bad as you want to breathe, then you'll be successful. - Eric Thomas"
+                Quote = "Não é sobre velocidade; é sobre direção."
                 Exit Select
             Case 117
-                Quote = "Today I will do what others won't so tomorrow I can what others can't. - Jerry Rice"
+                Quote = "Quando doer, lembre: está funcionando."
                 Exit Select
             Case 118
-                Quote = "Never confuse a single defeat with a final defeat. - F. Scott Fitzgerald"
+                Quote = "Você não está sem tempo; está sem prioridade."
                 Exit Select
             Case 119
-                Quote = "Turn your face to the sun and the shadows fall behind you. - Maori Proverb"
+                Quote = "A disciplina começa quando a motivação acaba."
                 Exit Select
             Case 120
-                Quote = "I don't count my sit-ups. I only start counting when it starts hurting. When I feel pain, that's when I start counting, because that's when it really counts. - Muhammad Ali"
+                Quote = "Eu não conto abdominais. Só começo a contar quando começa a doer. Quando sinto dor, é aí que começo a contar — porque é aí que realmente conta. - Muhammad Ali"
                 Exit Select
             Case 121
-                Quote = "Just stick with it. What seems so hard now will one day be your warm up."
+                Quote = "Apenas continue. O que parece tão difícil agora um dia será só o seu aquecimento."
                 Exit Select
             Case 122
-                Quote = "If you don't build your dream someone will hire you to help build theirs. - Tony Gaskins"
+                Quote = "Se você não construir o seu sonho, alguém vai te contratar para ajudar a construir o sonho dela. - Tony Gaskins"
                 Exit Select
             Case 123
-                Quote = "What would you do if you weren't afraid? - Sheryl Sandberg"
+                Quote = "O que você faria se não tivesse medo? - Sheryl Sandberg"
                 Exit Select
             Case 124
-                Quote = "Courage doesn't always roar. Sometimes courage is the little voice at the end of the day that says I'll try again tomorrow."
+                Quote = "Coragem nem sempre ruge. Às vezes, coragem é aquela voz baixinha no fim do dia que diz: amanhã eu tento de novo."
                 Exit Select
             Case 125
-                Quote = "Do what you can, with what you have, where you are. - Theodore Roosevelt"
+                Quote = "Faça o que você pode, com o que você tem, onde você está. - Theodore Roosevelt"
                 Exit Select
             Case 126
-                Quote = "If you think you are too small to make a difference, try sleeping with a mosquito. - Dalai Lama XIV"
+                Quote = "Se você acha que é pequeno demais para fazer diferença, tente dormir com um mosquito. - Dalai Lama XIV"
                 Exit Select
             Case 127
-                Quote = "How we spend our days is, of course, how we spend our lives. - Annie Dillard"
+                Quote = "A forma como passamos nossos dias é, claro, a forma como passamos nossas vidas. - Annie Dillard"
                 Exit Select
             Case 128
-                Quote = "I already know what giving up feels like. I want to see what happens if I don't."
+                Quote = "Eu já sei como é desistir. Quero ver o que acontece se eu não desistir."
                 Exit Select
             Case 129
-                Quote = "Stop letting people who do so little for you control so much of your mind, feeling s and emotions. - Will Smith"
+                Quote = "Pare de deixar pessoas que fazem tão pouco por você controlarem tanto da sua mente, sentimentos e emoções. - Will Smith"
                 Exit Select
             Case 130
-                Quote = "The habits that took years to build, do not take a day to change. - Susan Powter"
+                Quote = "Hábitos que levaram anos para ser construídos não mudam em um dia. - Susan Powter"
                 Exit Select
             Case 131
-                Quote = "Worry a little bit every day and in a lifetime you will lose a couple of years. If something is wrong, fix it if you can. But train yourself not to worry: Worry never fixes anything. - Ernest Hemingway"
+                Quote = "Preocupe-se um pouco todos os dias e, ao longo da vida, você perde alguns anos. Se algo estiver errado, conserte se puder. Mas treine-se para não se preocupar: preocupação nunca conserta nada. - Ernest Hemingway"
                 Exit Select
             Case 132
-                Quote = "It's not the load that breaks you down, it's the way you carry it. - Lou Holtz"
+                Quote = "Não é a carga que te derruba; é a forma como você a carrega. - Lou Holtz"
                 Exit Select
             Case 133
-                Quote = "Always be a first rate version of yourself and not a second rate version of someone else. - Judy Garland"
+                Quote = "Seja sempre uma versão de primeira linha de você mesmo, e não uma versão de segunda linha de outra pessoa. - Judy Garland"
                 Exit Select
             Case 134
-                Quote = "Better to be the one who smiled than the one who didn't smile back. - Mari Gayatri Stein"
+                Quote = "Melhor ser quem sorriu do que quem não sorriu de volta. - Mari Gayatri Stein"
                 Exit Select
             Case 135
-                Quote = "I'm too busy working on my own grass to notice if yours is greener."
+                Quote = "Estou ocupado demais cuidando do meu próprio jardim para notar se o seu é mais verde."
                 Exit Select
             Case 136
-                Quote = "Discipline is the bridge between goals and accomplishment. - Jim Rohn"
+                Quote = "Disciplina é a ponte entre metas e conquistas. - Jim Rohn"
                 Exit Select
             Case 137
-                Quote = "If you can't do great things, do small things in a great way. - Napoleon Hill"
+                Quote = "Se você não pode fazer grandes coisas, faça pequenas coisas de um jeito grandioso. - Napoleon Hill"
                 Exit Select
             Case 138
-                Quote = "A goal is a dream with a deadline. - Napoleon Hill"
+                Quote = "Uma meta é um sonho com prazo. - Napoleon Hill"
                 Exit Select
             Case 139
-                Quote = "Motivation is what gets you started. Habit is what keeps you going."
+                Quote = "Motivação é o que faz você começar. Hábito é o que faz você continuar."
                 Exit Select
             Case 140
-                Quote = "Success is the sum of small efforts, repeated day in and day out. - Robert Collier"
+                Quote = "Sucesso é a soma de pequenos esforços, repetidos dia após dia. - Robert Collier"
                 Exit Select
             Case 141
-                Quote = "A quitter never wins and a winner never quits. - Napoleon Hill"
+                Quote = "Quem desiste nunca vence, e quem vence nunca desiste. - Napoleon Hill"
                 Exit Select
             Case 142
-                Quote = "You miss 100% of the shots you don't take. - Wayne Gretzky"
+                Quote = "Você erra 100% dos arremessos que não faz. - Wayne Gretzky"
                 Exit Select
             Case 143
-                Quote = "Fall down seven times, get up eight. - Japanese Proverb"
+                Quote = "Caia sete vezes, levante-se oito. - Provérbio japonês"
                 Exit Select
             Case 144
-                Quote = "Don't wish it were easier. Wish you were better. - Jim Rohn"
+                Quote = "Não deseje que fosse mais fácil. Deseje ser melhor. - Jim Rohn"
                 Exit Select
             Case 145
-                Quote = "Screw it. Let's do it. - Richard Branson"
+                Quote = "Dane-se. Vamos fazer. - Richard Branson"
                 Exit Select
             Case 146
-                Quote = "Nothing is particularly hard if you divide it into small jobs. - Henry Ford"
+                Quote = "Nada é particularmente difícil se você dividir em pequenas tarefas. - Henry Ford"
                 Exit Select
             Case 147
-                Quote = "Formal education will make you a living. Self-education will make you a fortune. - Jim Rohn"
+                Quote = "Educação formal te dá sustento. Autoeducação te dá fortuna. - Jim Rohn"
                 Exit Select
             Case 148
-                Quote = "What is not started today is never finished tomorrow. - Johann Wolfgang von Goethe"
+                Quote = "O que não se começa hoje, nunca se termina amanhã. - Johann Wolfgang von Goethe"
                 Exit Select
             Case 149
-                Quote = "I have not failed. I've just found 10,000 ways that won't work. - Thomas A. Edison"
+                Quote = "Eu não falhei. Apenas descobri 10.000 maneiras que não funcionam. - Thomas A. Edison"
                 Exit Select
             Case 150
-                Quote = "The secret to getting ahead is getting started.- Mark Twain"
+                Quote = "O segredo para avançar é começar. - Mark Twain"
                 Exit Select
             Case 151
-                Quote = "The best way to predict the future is to create it. - Peter Ducker"
+                Quote = "A melhor forma de prever o futuro é criá-lo. - Peter Drucker"
                 Exit Select
             Case 152
-                Quote = "Go Big, or Go Home. - Eliza Dushku"
+                Quote = "Pense grande — ou fique em casa. - Eliza Dushku"
                 Exit Select
             Case 153
-                Quote = "Quality means doing it right when no one is looking. - Henry Ford"
+                Quote = "Qualidade é fazer certo quando ninguém está olhando. - Henry Ford"
                 Exit Select
             Case 154
-                Quote = "Success is not final, failure is not fatal: it is the courage to continue that counts. - Winston Churchill"
+                Quote = "Sucesso não é definitivo, fracasso não é fatal: o que conta é a coragem de continuar. - Winston Churchill"
                 Exit Select
             Case 155
-                Quote = "Wherever you go, go with all your heart. - Confucius"
+                Quote = "Aonde quer que você vá, vá com todo o seu coração. - Confúcio"
                 Exit Select
             Case 156
-                Quote = "If you are going through hell, keep going. - Winston Churchill"
+                Quote = "Se você está passando pelo inferno, continue. - Winston Churchill"
                 Exit Select
             Case 157
-                Quote = "If you aren't making waves, you aren't kicking hard enough."
+                Quote = "Se você não está fazendo ondas, é porque não está chutando forte o bastante."
                 Exit Select
             Case 158
-                Quote = "Find what you love and let it kill you. - Charles Bukowski"
+                Quote = "Encontre o que você ama e deixe isso te consumir. - Charles Bukowski"
                 Exit Select
             Case 159
-                Quote = "The true entrepreneur is a doer, not a dreamer. - Nolan Bushnell"
+                Quote = "O verdadeiro empreendedor faz; não apenas sonha. - Nolan Bushnell"
                 Exit Select
             Case 160
-                Quote = "When you have exhausted all possibilities, remember this - you haven't. - Thomas A. Edison"
+                Quote = "Quando você esgotar todas as possibilidades, lembre-se: você ainda não esgotou. - Thomas A. Edison"
                 Exit Select
             Case 161
-                Quote = "The way to get started is to quit talking and start doing. - Walt Disney"
+                Quote = "A maneira de começar é parar de falar e começar a fazer. - Walt Disney"
                 Exit Select
             Case 162
-                Quote = "Ideas are easy. Implementation is hard. - Guy Kawasaki"
+                Quote = "Ideias são fáceis. Execução é difícil. - Guy Kawasaki"
                 Exit Select
             Case 163
-                Quote = "It's hard to beat a person who never gives up. - Babe Ruth"
+                Quote = "É difícil vencer alguém que nunca desiste. - Babe Ruth"
                 Exit Select
             Case 164
-                Quote = "If everything seems under control, you're not going fast enough. - Mario Andretti"
+                Quote = "Se tudo parece sob controle, é porque você não está indo rápido o bastante. - Mario Andretti"
                 Exit Select
             Case 165
-                Quote = "Always deliver more than expected. - Larry Page"
+                Quote = "Sempre entregue mais do que esperam. - Larry Page"
                 Exit Select
             Case 166
-                Quote = "Failure is simply an opportunity to begin again, this time more intelligently. - Henry Ford"
+                Quote = "Fracasso é apenas uma oportunidade de recomeçar — desta vez, de forma mais inteligente. - Henry Ford"
                 Exit Select
             Case 167
-                Quote = "Always wake up with a smile knowing that today you are going to have fun accomplishing what others are too afraid to do."
+                Quote = "Acorde sempre com um sorriso, sabendo que hoje você vai se divertir realizando o que outros têm medo de fazer."
                 Exit Select
             Case 168
-                Quote = "When you find an idea that you just can't stop thinking about, that's probably a good one to pursue.- Josh James"
+                Quote = "Quando você encontra uma ideia na qual não consegue parar de pensar, provavelmente é uma boa para perseguir. - Josh James"
                 Exit Select
             Case 169
-                Quote = "Forget about your competitors, just focus on your customers. - Jack Ma"
+                Quote = "Esqueça os concorrentes; foque nos seus clientes. - Jack Ma"
                 Exit Select
             Case 170
-                Quote = "Stay hungry, Stay foolish. - Steve Jobs"
+                Quote = "Continue faminto. Continue tolo. - Steve Jobs"
                 Exit Select
             Case 171
-                Quote = "High expectations are the key to everything. - Sam Walton"
+                Quote = "Altas expectativas são a chave para tudo. - Sam Walton"
                 Exit Select
             Case 172
-                Quote = "A lot of times, people don't know what they want until you show it to them. - Steve Jobs"
+                Quote = "Muitas vezes, as pessoas não sabem o que querem até você mostrar a elas. - Steve Jobs"
                 Exit Select
             Case 173
-                Quote = "Don't worry about failure; you only have to be right once. - Drew Houston"
+                Quote = "Não se preocupe com o fracasso; você só precisa acertar uma vez. - Drew Houston"
                 Exit Select
             Case 174
-                Quote = "A pessimist sees the difficulty in every opportunity; an optimist sees the opportunity in every difficulty. - Winston Churchill"
+                Quote = "O pessimista vê dificuldade em toda oportunidade; o otimista vê oportunidade em toda dificuldade. - Winston Churchill"
                 Exit Select
             Case 175
-                Quote = "All things are difficult before they are easy. - Thomas Fuller"
+                Quote = "Tudo é difícil antes de ficar fácil. - Thomas Fuller"
                 Exit Select
             Case 176
-                Quote = "Life is 10% what happens to you and 90% how you react to it. - Charles R. Swindoll"
+                Quote = "A vida é 10% o que acontece com você e 90% como você reage. - Charles R. Swindoll"
                 Exit Select
             Case 177
-                Quote = "Either you run the day or the day runs you. - Jim Rohn"
+                Quote = "Ou você comanda o dia, ou o dia comanda você. - Jim Rohn"
                 Exit Select
             Case 178
-                Quote = "If opportunity doesn't knock, build a door. - Milton Berle"
+                Quote = "Se a oportunidade não bater à porta, construa uma porta. - Milton Berle"
                 Exit Select
             Case 179
-                Quote = "You cannot have a positive life and a negative mind. - Joyce Meyer"
+                Quote = "Você não pode ter uma vida positiva com uma mente negativa. - Joyce Meyer"
                 Exit Select
             Case 180
-                Quote = "Always turn a negative situation into a positive situation. - Michael Jordan"
+                Quote = "Transforme sempre uma situação negativa em uma situação positiva. - Michael Jordan"
                 Exit Select
             Case 181
-                Quote = "We are all here for some special reason. Stop being a prisoner of your past. Become the architect of your future. - Robin S. Sharma"
+                Quote = "Seu tempo é limitado, então não o desperdice vivendo a vida de outra pessoa. - Steve Jobs"
                 Exit Select
             Case 182
-                Quote = "The best revenge is massive success. - Frank Sinatra"
+                Quote = "Se você quer vencer, não pode ter medo de perder. - Floyd Mayweather"
                 Exit Select
             Case 183
-                Quote = "If we're growing, we're always going to be out of our comfort zone. - John C. Maxwell"
+                Quote = "Sua vida só melhora quando você melhora. - Brian Tracy"
                 Exit Select
             Case 184
-                Quote = "Hope is a waking dream. - Aristotle"
+                Quote = "Você não se torna o melhor por querer; você se torna o melhor por fazer."
                 Exit Select
             Case 185
-                Quote = "The difference between a successful person and others is not a lack of strength, not a lack of knowledge, but rather a lack in will. - Vince Lombardi"
+                Quote = "O sucesso normalmente vem para quem está ocupado demais para procurá-lo. - Henry David Thoreau"
                 Exit Select
             Case 186
-                Quote = "There are always flowers for those who want to see them. - Henri Matisse"
+                Quote = "Você não encontra vontade; você cria vontade."
                 Exit Select
             Case 187
-                Quote = "Even if you are on the right track, you'll get run over if you just sit there. - Will Rogers"
+                Quote = "Não deixe a opinião dos outros virar a sua realidade. - Les Brown"
                 Exit Select
             Case 188
-                Quote = "Nurture your mind with great thoughts, for you will never go any higher than you think. - Benjamin Disraeli"
+                Quote = "Se você pode sonhar, você pode realizar. - Walt Disney"
                 Exit Select
             Case 189
-                Quote = "I am the greatest, I said that even before I knew I was. - Muhammad Ali"
+                Quote = "A diferença entre o possível e o impossível está na determinação."
                 Exit Select
             Case 190
-                Quote = "The people who are crazy enough to think they can change the world are the ones who do. - Steve Jobs"
+                Quote = "A vida começa no fim da sua zona de conforto. - Neale Donald Walsch"
                 Exit Select
             Case 191
-                Quote = "The only way to do great work is to love what you do. If you haven't found it yet, keep looking. Don't settle. - Steve Jobs"
+                Quote = "Não é sobre ter tempo. É sobre fazer tempo."
                 Exit Select
             Case 192
-                Quote = "The journey is the reward. - Steve Jobs"
+                Quote = "Seja tão bom que não possam te ignorar. - Steve Martin"
                 Exit Select
             Case 193
-                Quote = "Focusing is about saying No. - Steve Jobs"
+                Quote = "A vitória pertence ao mais perseverante. - Napoleão Bonaparte"
                 Exit Select
             Case 194
-                Quote = "Deciding what not to do is as important as deciding what to do. - Steve Jobs"
+                Quote = "Você não precisa ser motivado; precisa ser disciplinado."
                 Exit Select
             Case 195
-                Quote = "Let's go invent tomorrow instead of worrying about what happened yesterday. - Steve Jobs"
+                Quote = "Acredite em você e todo o resto se encaixa. - Norman Vincent Peale"
                 Exit Select
             Case 196
-                Quote = "Why join the navy if you can be a pirate? - Steve Jobs"
+                Quote = "O que você faz em silêncio, grita nos resultados."
                 Exit Select
             Case 197
-                Quote = "If you focus on success, you'll have stress. But if you pursue excellence, success will be guaranteed. - Deepok Chopra"
+                Quote = "Desistir não é uma opção."
                 Exit Select
             Case 198
-                Quote = "In order to succeed, your desire for success should be greater than your fear of failure. - Bill Cosby"
+                Quote = "Você não precisa estar pronto. Você só precisa começar."
                 Exit Select
             Case 199
-                Quote = "Successful people have libraries. The rest have big screen TVs. - Jim Rohn"
+                Quote = "Quando você quer muito, você encontra um caminho."
                 Exit Select
             Case 200
-                Quote = "Action is the foundational key to all success. - Pablo Picasso"
+                Quote = "Seja a pessoa que você precisava quando era mais novo."
                 Exit Select
             Case 201
-                Quote = "It is not where you start but how high you aim that matters for success. - Nelson Mandela"
+                Quote = "Se você quer algo que nunca teve, faça o que nunca fez."
                 Exit Select
             Case 202
-                Quote = "Success is nothing more than a few simple disciplines, practiced every day. - Jim Rohn"
+                Quote = "Foque no que você pode controlar."
                 Exit Select
             Case 203
-                Quote = "Success is doing ordinary things extraordinarily well. - Jim Rohn"
+                Quote = "O sucesso é construído no que você faz repetidamente."
                 Exit Select
             Case 204
-                Quote = "Successful people don't have fewer problems. They have determined that nothing will stop them from going forward. - Ben Carson"
+                Quote = "Corra o risco ou perca a chance."
                 Exit Select
             Case 205
-                Quote = "You only live once, but if you do it right, once is enough. - Mae West"
+                Quote = "Você só cresce quando se desafia."
                 Exit Select
             Case 206
-                Quote = "To live is the rarest thing in the world. Most people exist, that is all."
+                Quote = "A consistência vence."
                 Exit Select
             Case 207
-                Quote = "What is the point of being alive if you don't at least try to do something remarkable? - John Green"
+                Quote = "Quem tem um porquê enfrenta quase qualquer como. - Friedrich Nietzsche"
                 Exit Select
             Case 208
-                Quote = "The two most important days in your life are the day you are born and the day you find out why. - Mark Twain"
+                Quote = "Progresso, não perfeição."
                 Exit Select
             Case 209
-                Quote = "Do not pray for an easy life, pray for the strength to endure a difficult one. - Bruce Lee"
+                Quote = "A disciplina é o melhor amigo do seu futuro."
                 Exit Select
             Case 210
-                Quote = "Be happy, but never satisfied. - Bruce Lee"
+                Quote = "Você é o seu maior projeto."
                 Exit Select
             Case 211
-                Quote = "Your ""I CAN"" is more important than you IQ. - Robin S. Sharma"
+                Quote = "O que você faz hoje define quem você será amanhã."
                 Exit Select
             Case 212
-                Quote = "Small daily improvements over time create stunning results. - Robin S. Sharma"
+                Quote = "Grandes coisas nunca vêm da zona de conforto."
                 Exit Select
             Case 213
-                Quote = "It's better to be a lion for a day than a sheep all your life. - Elizabeth Kenny"
+                Quote = "Aja como se fosse impossível falhar."
                 Exit Select
             Case 214
-                Quote = "Believe you can and you're halfway there. - Theodore Roosevelt"
+                Quote = "Não conte os dias; faça os dias contarem. - Muhammad Ali"
                 Exit Select
             Case 215
-                Quote = "Anyone can give up; it is the easiest thing in the world to do. But to hold it together when everyone would expect you to fall apart, now that is true strength. - Chris Bradford"
+                Quote = "A sua única limitação é você."
                 Exit Select
             Case 216
-                Quote = "If not now, when? - Eckhart Tolle"
+                Quote = "Trabalhe duro até que seu ídolo vire seu rival."
                 Exit Select
             Case 217
-                Quote = "This, too, will pass. - Eckhart Tolle"
+                Quote = "A dor é temporária. O orgulho é para sempre."
                 Exit Select
             Case 218
-                Quote = "If you can't fly then run, if you can't run then walk, if you can't walk then crawl, but whatever you do you have to keep moving forward. - Martin Luther King Jr."
+                Quote = "Você não se arrependerá do esforço."
                 Exit Select
             Case 219
-                Quote = "I am a slow walker, but I never walk back. - Abraham Lincoln"
+                Quote = "Se você falhar, pelo menos falhou tentando."
                 Exit Select
             Case 220
-                Quote = "Courage is not having the strength to go on; it is going on when you don't have the strength. - Theodore Roosevelt"
+                Quote = "O esforço de hoje é o seu resultado de amanhã."
                 Exit Select
             Case 221
-                Quote = "With ordinary talent and extraordinary perseverance, all things are attainable. - Thomas Fowell Buxton"
+                Quote = "Treine sua mente para ver o bem em tudo."
                 Exit Select
             Case 222
-                Quote = "I could either watch it happen or be a part of it. - Elon Musk"
+                Quote = "Não espere. O momento nunca será perfeito. - Napoleon Hill"
                 Exit Select
             Case 223
-                Quote = "We are all in the gutter, but some of us looking at the stars. - Oscar Wilde"
+                Quote = "Você é mais forte do que qualquer desculpa."
                 Exit Select
             Case 224
-                Quote = "A good friend will always stab you in the front. - Oscar Wilde"
+                Quote = "Foco e disciplina: o resto é ruído."
                 Exit Select
             Case 225
-                Quote = "Never try to teach a pig to sing; it wastes your time and it annoys the pig. - Robert A. Heinlein"
+                Quote = "A mudança começa quando você decide."
                 Exit Select
             Case 226
-                Quote = "I need a six month vacation twice a year. - Anonymous"
+                Quote = "Seja a prova viva de que dá para virar o jogo."
                 Exit Select
             Case 227
-                Quote = "The best things in life are free. The second best are very expensive. - Coco Chanel"
+                Quote = "Não é sorte. É trabalho."
                 Exit Select
             Case 228
-                Quote = "Dear Karma, I have a list of people that you missed."
+                Quote = "Quanto mais você sua no treino, menos sangra na guerra."
                 Exit Select
             Case 229
-                Quote = "If at first you don't succeed, destroy all evidence that you tried. - Steven Wright"
+                Quote = "Faça o que é difícil agora e viva o que é fácil depois."
                 Exit Select
             Case 230
-                Quote = "The trouble with being in the rat race is that even if you win, you're still a rat. - Lily Tomlin"
+                Quote = "Você não precisa ser excelente; precisa ser constante."
                 Exit Select
             Case 231
-                Quote = "The road to success is dotted with many tempting parking spaces. - Will Rogers"
+                Quote = "Quando você quer parar, é aí que você deve continuar."
                 Exit Select
             Case 232
-                Quote = "Always listen To your heart, because even though it's on your left side, it’s always right. - Nicholas Sparks"
+                Quote = "Continue. Você está mais perto do que imagina."
                 Exit Select
             Case 233
-                Quote = "The more anger towards the past you carry in your heart, the less capable you are of loving in the present. - Barbara De Angelis"
+                Quote = "A disciplina te dá aquilo que a motivação promete."
                 Exit Select
             Case 234
-                Quote = "Life is never boring, but some people choose to be bored. － Wayne Dyer"
+                Quote = "Se você tem um sonho, proteja-o. - À Procura da Felicidade"
                 Exit Select
             Case 235
-                Quote = "It is not because things are difficult that we do not dare; it is because we do not dare that they are difficult.  － Seneca the Younger"
+                Quote = "Você pode até ser lento. Só não pare."
                 Exit Select
             Case 236
-                Quote = "I have lived my life according to this principle: If I'm afraid of it, then I must do it. - Erica Jong"
+                Quote = "Não existe atalho. Existe processo."
                 Exit Select
             Case 237
-                Quote = "The first recipe for happiness is: Avoid too lengthy meditations on the past. - Andre Maurois"
+                Quote = "Cada dia é um novo começo."
                 Exit Select
             Case 238
-                Quote = "You cannot find peace by avoiding life. - Virginia Woolf"
+                Quote = "Seja melhor do que ontem."
                 Exit Select
             Case 239
-                Quote = "Your big opportunity may be right where you are now. - Napoleon Hill"
+                Quote = "Persistência: continue quando quiser desistir."
                 Exit Select
             Case 240
-                Quote = "Your level of belief in yourself will inevitably manifest itself in whatever you do. - Les Brown"
+                Quote = "Nada muda se nada mudar."
                 Exit Select
             Case 241
-                Quote = "We learn wisdom from failure much more than success. We often discover what we will do, by finding out what we will not do. - Samuel Smiles"
+                Quote = "Aprendemos muito mais sabedoria com o fracasso do que com o sucesso. Muitas vezes descobrimos o que vamos fazer ao descobrir o que não vamos fazer. - Samuel Smiles"
                 Exit Select
             Case 242
-                Quote = "If you change the way you look at things, the things you look at change. - Dr. Wayne Dyer"
+                Quote = "Se você muda a forma como vê as coisas, as coisas que você vê mudam. - Dr. Wayne Dyer"
                 Exit Select
             Case 243
-                Quote = "Our minds can shape the way a thing will be because we act according to our expectations. - Federico Fellini"
+                Quote = "Nossa mente pode moldar como algo será, porque agimos de acordo com nossas expectativas. - Federico Fellini"
                 Exit Select
             Case 244
-                Quote = "What you become is far more important than what you get. What you get will be influenced by what you become. - Jim Rohn"
+                Quote = "O que você se torna é muito mais importante do que o que você obtém. O que você obtém é influenciado pelo que você se torna. - Jim Rohn"
                 Exit Select
             Case 245
-                Quote = "We can do anything we want to do if we stick to it long enough. - Helen Keller"
+                Quote = "Podemos fazer qualquer coisa que queiramos, se nos mantivermos nisso tempo suficiente. - Helen Keller"
                 Exit Select
             Case 246
-                Quote = "The fool needs company, the wise solitude. -Unknown"
+                Quote = "O tolo precisa de companhia; o sábio, de solitude. - Desconhecido"
                 Exit Select
             Case 247
-                Quote = "A constant struggle, a ceaseless battle to bring success from inhospitable surroundings, is the price of all great achievements. -Marden"
+                Quote = "Uma luta constante, uma batalha sem cessar para fazer nascer o sucesso em meio a condições hostis, é o preço de todas as grandes conquistas. - Marden"
                 Exit Select
             Case 248
-                Quote = "The universe is full of magical things patiently waiting for our wits to grow sharper. -Eden Phillpotts"
+                Quote = "O universo está cheio de coisas mágicas esperando pacientemente que nossa inteligência fique mais afiada. - Eden Phillpotts"
                 Exit Select
             Case 249
-                Quote = "You must do the thing you think you cannot do. -Eleanor Roosevelt"
+                Quote = "Você precisa fazer a coisa que acha que não consegue fazer. - Eleanor Roosevelt"
                 Exit Select
             Case 250
-                Quote = "When your desires are strong enough you will appear to possess superhuman powers to achieve. -Napoleon Hill"
+                Quote = "Quando seus desejos são fortes o bastante, você parece possuir poderes sobre-humanos para realizar. - Napoleon Hill"
                 Exit Select
             Case 251
-                Quote = "You are the only person on earth who can use your ability. -Zig Ziglar"
+                Quote = "Você é a única pessoa na Terra que pode usar a sua capacidade. - Zig Ziglar"
                 Exit Select
             Case 252
-                Quote = "Remember, no effort that we make to attain something beautiful is ever lost. -Helen Keller"
+                Quote = "Lembre-se: nenhum esforço que fazemos para alcançar algo belo é jamais perdido. - Helen Keller"
                 Exit Select
             Case 253
-                Quote = "Becoming a star may not be your destiny, but being the best that you can be is a goal that you can set for yourselves. -Bryan Lindsay"
+                Quote = "Tornar-se uma estrela pode não ser o seu destino, mas ser o melhor que você pode ser é uma meta que você pode definir para si. - Bryan Lindsay"
                 Exit Select
             Case 254
-                Quote = "A soul without a high aim is like a ship without a rudder. -Eileen Caddy"
+                Quote = "Uma alma sem um grande objetivo é como um navio sem leme. - Eileen Caddy"
                 Exit Select
             Case 255
-                Quote = "Do not anticipate trouble, or worry about what may never happen. Keep in the sunlight. -Benjamin Franklin"
+                Quote = "Não antecipe problemas nem se preocupe com o que talvez nunca aconteça. Permaneça na luz do sol. - Benjamin Franklin"
                 Exit Select
             Case 256
-                Quote = "To lose patience is to lose the battle. -Mahatma Gandhi"
+                Quote = "Perder a paciência é perder a batalha. - Mahatma Gandhi"
                 Exit Select
             Case 257
-                Quote = "Kindness is a hard thing to give away. It keeps coming back to the giver. -Ralph Scott"
+                Quote = "Gentileza é difícil de se dar embora: ela sempre volta para quem deu. - Ralph Scott"
                 Exit Select
             Case 258
-                Quote = "Give the world the best that you have, and the best will come back to you. -Madeline Bridges"
+                Quote = "Entregue ao mundo o melhor que você tem, e o melhor voltará para você. - Madeline Bridges"
                 Exit Select
             Case 259
-                Quote = "Opportunity is missed by most people because it is dressed in overalls and looks like work. -Thomas Edison"
+                Quote = "A oportunidade é perdida pela maioria das pessoas porque vem vestida de macacão e parece trabalho. - Thomas Edison"
                 Exit Select
             Case 260
-                Quote = "The secret of discipline is motivation. When a man is sufficiently motivated, discipline will take care of itself. -Alexander Paterson"
+                Quote = "O segredo da disciplina é a motivação. Quando alguém está suficientemente motivado, a disciplina cuida de si mesma. - Alexander Paterson"
                 Exit Select
             Case 261
-                Quote = "Knowing others is intelligence; knowing yourself is true wisdom. Mastering others is strength, mastering yourself is true power. -Lao-Tzu"
+                Quote = "Conhecer os outros é inteligência; conhecer a si mesmo é verdadeira sabedoria. Dominar os outros é força; dominar a si mesmo é verdadeiro poder. - Lao-Tzu"
                 Exit Select
             Case 262
-                Quote = "Failure doesn't mean you are a failure...it just means you haven't succeeded yet. -Robert Schuller"
+                Quote = "Fracassar não significa que você é um fracasso... só significa que você ainda não teve sucesso. - Robert Schuller"
                 Exit Select
             Case 263
-                Quote = "Everything that happens happens as it should, and if you observe carefully, you will find this to be so. -Marcus Antoninus"
+                Quote = "Tudo o que acontece, acontece como deveria; e, se você observar com cuidado, verá que é assim. - Marcus Antoninus"
                 Exit Select
             Case 264
-                Quote = "It takes a great man to give sound advice tactfully, but a greater to accept it graciously. -J.C. Macaulay"
+                Quote = "É preciso um grande homem para dar um conselho sensato com tato, mas um ainda maior para aceitá-lo com elegância. - J.C. Macaulay"
                 Exit Select
             Case 265
-                Quote = "Your goal should be out of reach but not out of sight. -Anita DeFrantz"
+                Quote = "Sua meta deve estar fora do alcance, mas não fora da vista. - Anita DeFrantz"
                 Exit Select
             Case 266
-                Quote = "You don't become enormously successful without encountering and overcoming a number of extremely challenging problems. -Mark Victor Hansen"
+                Quote = "Você não se torna extremamente bem-sucedido sem enfrentar e superar vários problemas extremamente desafiadores. - Mark Victor Hansen"
                 Exit Select
             Case 267
-                Quote = "Start by doing what's necessary, then what's possible and suddenly you are doing the impossible. -St. Francis of Assisi"
+                Quote = "Comece fazendo o que é necessário; depois, o que é possível; e, de repente, você estará fazendo o impossível. - São Francisco de Assis"
                 Exit Select
             Case 268
-                Quote = "Mistakes and errors are the discipline through which we advance. -William Ellery Channing"
+                Quote = "Erros e falhas são a disciplina pela qual avançamos. - William Ellery Channing"
                 Exit Select
             Case 269
-                Quote = "SUCCESS IS NO ACCIDENT. It is hard work, perseverance, learning, studying, sacrifice and most of all, love of what you are doing. -Pele"
+                Quote = "SUCESSO NÃO É ACIDENTE. É trabalho duro, perseverança, aprendizado, estudo, sacrifício e, acima de tudo, amor pelo que você faz. - Pelé"
                 Exit Select
             Case 270
-                Quote = "Today is the first blank page of a 365 page book. Make it a good one."
+                Quote = "Hoje é a primeira página em branco de um livro de 365 páginas. Faça valer a pena."
                 Exit Select
             Case 271
-                Quote = "It's a terrible thing, I think, in life to wait until you're ready, I have this feeling now that actually no one is ever ready to do anything. There is almost no such thing as ready. There is only now. And you may as well do it now. Generally speaking, now is as good a time as any. -Hugh Laurie"
+                Quote = "É uma coisa terrível, eu acho, esperar até estar pronto. Tenho a sensação de que ninguém nunca está pronto para fazer nada. Quase não existe ""estar pronto"". Existe apenas o agora. E você pode muito bem fazer agora. Em geral, agora é tão bom quanto qualquer momento. - Hugh Laurie"
                 Exit Select
             Case 272
-                Quote = "Ever loved someone so much, you would do anything for them? Yeah, well make that someone yourself and do whatever the hell you want. -Harvey Specter"
+                Quote = "Já amou alguém tanto que faria qualquer coisa por ela? Então faça dessa pessoa você mesmo e faça o que quiser. - Harvey Specter"
                 Exit Select
             Case 273
-                Quote = "Sometimes the people with the greatest potential often take the longest to find their path because their sensitivity is a double edged sword - it lives at the heart of their brilliance, but it also makes them more susceptible to life's pains. Good thing we aren't being penalized for handing in our purpose late. The soul doesn't know a thing about deadlines. -Jeff Brown"
+                Quote = "Às vezes, as pessoas com maior potencial demoram mais para encontrar o próprio caminho, porque a sensibilidade é uma espada de dois gumes: está no coração do brilho, mas também torna mais vulnerável às dores da vida. Ainda bem que não somos punidos por descobrir nosso propósito mais tarde. A alma não sabe nada sobre prazos. - Jeff Brown"
                 Exit Select
             Case 274
-                Quote = "Sadly, the only way some people will learn to appreciate you is by losing you."
+                Quote = "Infelizmente, a única forma de algumas pessoas aprenderem a te valorizar é te perdendo."
                 Exit Select
             Case 275
-                Quote = "Nobody is superior, nobody is inferior, but nobody is equal either. People are simply unique, incomparable. YOU ARE YOU. I AM I. -osho"
+                Quote = "Ninguém é superior, ninguém é inferior, mas ninguém é igual também. As pessoas são únicas, incomparáveis. VOCÊ É VOCÊ. EU SOU EU. - Osho"
                 Exit Select
             Case 276
-                Quote = "Follow your heart, but take your brain with you."
+                Quote = "Siga o seu coração, mas leve o seu cérebro junto."
                 Exit Select
             Case 277
-                Quote = "Why do people hide love and express hatred so openly?"
+                Quote = "Por que as pessoas escondem o amor e demonstram o ódio tão abertamente?"
                 Exit Select
             Case 278
-                Quote = "One of the best lessons you can learn in life is to master how to remain calm."
+                Quote = "Uma das melhores lições da vida é aprender a permanecer calmo."
                 Exit Select
             Case 279
-                Quote = "I don't think inside the box, I don't think outside the box either. I don't even know where the box is."
+                Quote = "Eu não penso dentro da caixa, nem fora dela. Eu nem sei onde essa caixa está."
                 Exit Select
             Case 280
-                Quote = "So many people worry about their physical appearance and material possessions, that they completely disregard their shitty personality."
+                Quote = "Muita gente se preocupa com aparência e bens materiais e acaba ignorando totalmente a própria personalidade."
                 Exit Select
             Case 281
-                Quote = "I've only met about 3 or 4 people That understand me. Everyone else assumes I'm either angry, sarcastic or just an asshole."
+                Quote = "Conheci poucas pessoas que realmente me entendem. O resto acha que eu estou sempre bravo, sarcástico ou sendo grosso."
                 Exit Select
             Case 282
-                Quote = "Tell me not to do something and I will do it twice and take pictures."
+                Quote = "Me diga para não fazer algo e eu faço duas vezes e ainda tiro foto."
                 Exit Select
             Case 283
-                Quote = "If you can't handle stress, you can't handle success."
+                Quote = "Se você não consegue lidar com estresse, não consegue lidar com sucesso."
                 Exit Select
             Case 284
-                Quote = "It's okay to be a little fucked up in the head, we all are. It's only when you're fucked up in the heart that makes you a piece of shit."
+                Quote = "Tudo bem ter a cabeça um pouco bagunçada — todo mundo tem. O problema é quando o coração fica amargo."
                 Exit Select
             Case 285
-                Quote = "Don't quit. You're already in pain; you're already hurt. Get a reward from it."
+                Quote = "Não desista. Você já está com dor; já está machucado. Tire uma recompensa disso."
                 Exit Select
             Case 286
-                Quote = "One person can make a difference, and everyone should try. - JFK"
+                Quote = "Uma pessoa pode fazer a diferença — e todos deveriam tentar. - JFK"
                 Exit Select
             Case 287
-                Quote = "If it excites you and scares you at the same time, it might be a good thing to try."
+                Quote = "Se isso te empolga e te assusta ao mesmo tempo, talvez valha a pena tentar."
                 Exit Select
             Case 288
-                Quote = "I still love the people I've loved, even if I cross the street to avoid them. -Uma Thurman"
+                Quote = "Eu ainda amo as pessoas que já amei, mesmo que eu atravesse a rua para evitá-las. - Uma Thurman"
                 Exit Select
             Case 289
-                Quote = "Love is not a reason to tolerate disrespect."
+                Quote = "Amor não é motivo para tolerar desrespeito."
                 Exit Select
             Case 290
-                Quote = "Be the Reason Someone Believes in the Goodness of People. -Lori Deschene"
+                Quote = "Seja o motivo de alguém acreditar na bondade das pessoas. - Lori Deschene"
                 Exit Select
             Case 291
-                Quote = "Relax and trust the timing of your life. You will figure out your career. You will find the right relationship. You will become the person you always wanted to be. Just don't forget to appreciate who you are now. - Ruben Chavez"
+                Quote = "Relaxe e confie no tempo da sua vida. Você vai encontrar sua carreira. Vai encontrar o relacionamento certo. Vai se tornar a pessoa que sempre quis ser. Só não esqueça de valorizar quem você é agora. - Ruben Chavez"
                 Exit Select
             Case 292
-                Quote = "You have to get to a point where your mood doesn't shift based on the insignificant actions of someone else."
+                Quote = "Você precisa chegar a um ponto em que seu humor não muda por causa das ações insignificantes de outra pessoa."
                 Exit Select
             Case 293
-                Quote = "Nothing compares to the stomach ache you get from laughing with your best friends."
+                Quote = "Nada se compara à dor na barriga de tanto rir com seus melhores amigos."
                 Exit Select
             Case 294
-                Quote = "I like my bed more than I like most people."
+                Quote = "Eu gosto mais da minha cama do que da maioria das pessoas."
                 Exit Select
             Case 295
-                Quote = "Life is a soup and I'm a fucking fork."
+                Quote = "A vida é uma sopa e eu sou um garfo."
                 Exit Select
             Case 296
-                Quote = "Never assume that loud is strong and quiet is weak."
+                Quote = "Nunca assuma que o barulhento é forte e o quieto é fraco."
                 Exit Select
             Case 297
-                Quote = "Better an oops than a what if."
+                Quote = "Melhor um ""ops"" do que um ""e se...?""."
                 Exit Select
             Case 298
-                Quote = "Stay low key. Not everyone needs to know everything about you."
+                Quote = "Seja discreto. Nem todo mundo precisa saber tudo sobre você."
                 Exit Select
             Case 299
-                Quote = "When you see something beautiful in someone, tell them. It may take seconds to say, but for them, it could last a lifetime."
+                Quote = "Quando você vir algo bonito em alguém, diga. Leva segundos para falar, mas para a pessoa pode durar a vida inteira."
                 Exit Select
             Case 300
-                Quote = "It is easier to build strong children than to repair broken adults.. - F. Douglass"
+                Quote = "É mais fácil criar crianças fortes do que consertar adultos quebrados. - F. Douglass"
                 Exit Select
             Case 301
-                Quote = "I am currently under construction. Thank you for your patience."
+                Quote = "Estou em construção no momento. Obrigado pela sua paciência."
                 Exit Select
             Case 302
-                Quote = "Three C's in life: Choices, Chances, Changes. You must make a choice to take a chance or your life will never change."
+                Quote = "Três C's na vida: Escolhas, Chances, Mudanças. Você precisa escolher arriscar, ou sua vida nunca vai mudar."
                 Exit Select
             Case 303
-                Quote = "Remember why you started."
+                Quote = "Lembre-se do porquê você começou."
                 Exit Select
             Case 304
-                Quote = "Real love doesn't meet you at your best. It meets you in your mess. - J.S. PARK"
+                Quote = "Amor de verdade não te encontra no seu melhor. Ele te encontra no seu caos. - J.S. PARK"
                 Exit Select
             Case 305
-                Quote = "You can't always have a good day but you can always face a bad day with a good attitude."
+                Quote = "Você nem sempre vai ter um bom dia, mas sempre pode enfrentar um dia ruim com uma boa atitude."
                 Exit Select
             Case 306
-                Quote = "People who repeatedly attack your confidence and self-esteem are quite aware of your potential, even if you are not. - Wayne Gerard Trotman"
+                Quote = "Pessoas que atacam repetidamente sua confiança e autoestima sabem muito bem do seu potencial, mesmo que você ainda não saiba. - Wayne Gerard Trotman"
                 Exit Select
             Case 307
-                Quote = "I'm a very patient person and I give plenty of second chances, but I'm not a saint, I have my limits."
+                Quote = "Eu sou muito paciente e dou muitas segundas chances, mas não sou santo: eu tenho meus limites."
                 Exit Select
             Case 308
-                Quote = "Not everyday is a good day, live anyway. Not everyone will tell you the truth, be honest anyway. Not all you love will love you back, love anyway. Not all deals are fair, play fair anyway."
+                Quote = "Nem todo dia é um bom dia — viva mesmo assim. Nem todo mundo vai te dizer a verdade — seja honesto mesmo assim. Nem todo mundo que você ama vai te amar de volta — ame mesmo assim. Nem todos os acordos são justos — seja justo mesmo assim."
                 Exit Select
             Case 309
-                Quote = "People say a lot. So, I watch what they do. -via Quotes 'nd Notes"
+                Quote = "As pessoas falam muito. Então eu observo o que elas fazem. - via Quotes 'nd Notes"
                 Exit Select
             Case 310
-                Quote = "Choose people who choose you."
+                Quote = "Escolha pessoas que escolhem você."
                 Exit Select
             Case 311
-                Quote = "I stopped explaining myself when I realised people only understand from their level of perception."
+                Quote = "Eu parei de me explicar quando percebi que as pessoas só entendem a partir do próprio nível de percepção."
                 Exit Select
             Case 312
-                Quote = "Believe me there is somebody out there who will fall in love with your kind of crazy."
+                Quote = "Acredite: existe alguém por aí que vai se apaixonar pelo seu tipo de loucura."
                 Exit Select
             Case 313
-                Quote = "Train your mind to see the good in every situation."
+                Quote = "Treine sua mente para ver o bem em toda situação."
                 Exit Select
             Case 314
-                Quote = "Let them judge you. Let them misunderstand you. Let them gossip about you. Their opinions aren't your problem. You stay kind, committed to love, and free in your authenticity. No matter what they do or say, don't you dare doubt your worth or the beauty of your truth. Just keep on shining like you do. - Scott Stabile"
+                Quote = "Deixe que te julguem. Deixe que te entendam errado. Deixe que falem de você. A opinião deles não é problema seu. Você siga gentil, comprometido com o amor e livre na sua autenticidade. Não importa o que façam ou digam, não ouse duvidar do seu valor ou da beleza da sua verdade. Continue brilhando do seu jeito. - Scott Stabile"
                 Exit Select
             Case 315
-                Quote = "You can meet somebody tomorrow who has better intentions for you than someone you've known forever. Time means nothing, character does."
+                Quote = "Você pode conhecer amanhã alguém que tem melhores intenções por você do que alguém que você conhece há anos. Tempo não significa nada; caráter, sim."
                 Exit Select
             Case 316
-                Quote = "Everything is temporary."
+                Quote = "Tudo é temporário."
                 Exit Select
             Case 317
-                Quote = "I notice everything, but I keep my mouth shut."
+                Quote = "Eu percebo tudo, mas fico calado."
                 Exit Select
             Case 318
-                Quote = "When it hurts - observe. Life is trying to teach you something. -Anita Krizzan"
+                Quote = "Quando doer — observe. A vida está tentando te ensinar alguma coisa. - Anita Krizzan"
                 Exit Select
             Case 319
-                Quote = "Don't underestimate me because I'm quiet. I know more than I say, think more than I speak and observe more than you know. - Michaela Chung"
+                Quote = "Não me subestime porque eu sou quieto. Eu sei mais do que digo, penso mais do que falo e observo mais do que você imagina. - Michaela Chung"
                 Exit Select
             Case 320
-                Quote = "If some one corrects you, and you feel offended, then you have an ego problem. - Nouman Ali Khan"
+                Quote = "Se alguém te corrige e você se ofende, então você tem um problema de ego. - Nouman Ali Khan"
                 Exit Select
             Case 321
-                Quote = "If you're helping someone and expecting something in return, you're doing business not kindness."
+                Quote = "Se você ajuda alguém esperando algo em troca, você está fazendo negócio — não gentileza."
                 Exit Select
             Case 322
-                Quote = "Life is like a book. Some chapters are sad, some are happy, and some are exciting, but if you never turn the page, you will never know what the next chapter has in store for you."
+                Quote = "A vida é como um livro. Alguns capítulos são tristes, outros são felizes e outros são empolgantes. Mas, se você nunca virar a página, nunca vai saber o que o próximo capítulo reserva."
                 Exit Select
             Case 323
-                Quote = "I don't care how long it takes me, I'm going somewhere beautiful."
+                Quote = "Não importa quanto tempo eu leve: eu vou chegar a um lugar bonito."
                 Exit Select
             Case 324
-                Quote = "There's a time to be nice, and there's a time to say, ""I've had enough of your bullshit."""
+                Quote = "Há uma hora de ser gentil e há uma hora de dizer: ""já chega da sua besteira."""
                 Exit Select
             Case 325
-                Quote = "Life tip: when nothing goes right, go to sleep."
+                Quote = "Dica de vida: quando nada dá certo, vá dormir."
                 Exit Select
             Case 326
-                Quote = "Always Love your friends from your Heart not from your mood or need."
+                Quote = "Ame sempre seus amigos com o coração, não de acordo com seu humor ou necessidade."
                 Exit Select
             Case 327
-                Quote = "The soul always knows what to do to heal itself, The challenge is to silence the mind. - Caroline Myss"
+                Quote = "A alma sempre sabe o que fazer para se curar. O desafio é silenciar a mente. - Caroline Myss"
                 Exit Select
             Case 328
-                Quote = "Never beg someone to be in your life. If you text, call, visit and still get ignored, walk away. It's called 'SELF-RESPECT'. - Steve Wentworth"
+                Quote = "Nunca implore para alguém ficar na sua vida. Se você manda mensagem, liga, visita e ainda é ignorado, vá embora. Isso se chama ""autorrespeito"". - Steve Wentworth"
                 Exit Select
             Case 329
-                Quote = "I love people who are direct even if you have a difference of opinions with them, at least you know where they stand and they don't play games."
+                Quote = "Eu gosto de pessoas diretas. Mesmo quando vocês discordam, pelo menos você sabe onde elas estão e elas não fazem joguinhos."
                 Exit Select
             Case 330
-                Quote = "At age 20, we worry about what others think of us. At age 40, we don't care what they think of us. At age 60, we discover they haven't been thinking of us at all. - Ann Landers"
+                Quote = "Aos 20, a gente se preocupa com o que os outros pensam da gente. Aos 40, a gente não liga. Aos 60, a gente descobre que eles nem estavam pensando na gente. - Ann Landers"
                 Exit Select
             Case 331
-                Quote = "Always remember someone's effort is a reflection of their interest in you."
+                Quote = "Sempre lembre: o esforço de alguém reflete o interesse que ela tem por você."
                 Exit Select
             Case 332
-                Quote = "Talk with people who make you see the world differently."
+                Quote = "Converse com pessoas que te fazem ver o mundo de um jeito diferente."
                 Exit Select
             Case 333
-                Quote = "To all the people who are loving and kind to me. Thank you for the sunshine you bring into my life. - Brigitte Nicole"
+                Quote = "A todas as pessoas que são amorosas e gentis comigo: obrigado pela luz que vocês colocam na minha vida. - Brigitte Nicole"
                 Exit Select
             Case 334
-                Quote = "When you're wrong admit it. When you're right, be quiet. - Ogden Nash"
+                Quote = "Quando você estiver errado, admita. Quando estiver certo, fique em silêncio. - Ogden Nash"
                 Exit Select
             Case 335
-                Quote = "Some of you secretly don't like me, but I secretly know and don't give a shit."
+                Quote = "Alguns de vocês secretamente não gostam de mim. E eu sei disso — e não tô nem aí."
                 Exit Select
             Case 336
-                Quote = "The biggest communication problem is we do not listen to understand. We listen to reply."
+                Quote = "O maior problema de comunicação é que não ouvimos para entender; ouvimos para responder."
                 Exit Select
             Case 337
-                Quote = "My words will either attract a strong mind or offend a weak one."
+                Quote = "Minhas palavras ou atraem uma mente forte, ou ofendem uma mente fraca."
                 Exit Select
             Case 338
-                Quote = "Loneliness is dangerous. It's addicting. Once you see how peaceful it is, you don't want to deal with people. - Hedonist Poet"
+                Quote = "A solidão é perigosa. Vicia. Quando você percebe o quanto ela é tranquila, não quer mais lidar com pessoas. - Hedonist Poet"
                 Exit Select
             Case 339
-                Quote = "You need you, more than you need them. Trust me."
+                Quote = "Você precisa de você mais do que precisa deles. Confia em mim."
                 Exit Select
             Case 340
-                Quote = "If there's even a slight chance at getting something that will make you happy, RISK IT. Life's too short and happiness is too rare. - A.R. Lucas"
+                Quote = "Se existe a menor chance de conseguir algo que te faça feliz, ARRISQUE. A vida é curta demais e a felicidade é rara demais. - A.R. Lucas"
                 Exit Select
             Case 341
-                Quote = """too busy"" is a myth. People make time for the things that are really important to them."
+                Quote = """ocupado demais"" é um mito. As pessoas arrumam tempo para aquilo que é realmente importante para elas."
                 Exit Select
             Case 342
-                Quote = "Some people are just beautifully wrapped boxes of bullshit."
+                Quote = "Algumas pessoas são só caixas de presente bonitas cheias de mentira."
                 Exit Select
             Case 343
-                Quote = "Happiness is … meeting an old friend after a long time and feeling that nothing has changed."
+                Quote = "Felicidade é… reencontrar um amigo antigo depois de muito tempo e sentir que nada mudou."
                 Exit Select
             Case 344
-                Quote = "When something good happens, travel to celebrate. If something bad happens, travel to forget it. If nothing happens, travel to make something happen."
+                Quote = "Quando algo bom acontecer, viaje para comemorar. Se algo ruim acontecer, viaje para esquecer. Se nada acontecer, viaje para fazer algo acontecer."
                 Exit Select
             Case 345
-                Quote = "Strangers can become best friends just as easy as best friends can become strangers."
+                Quote = "Estranhos podem virar melhores amigos tão facilmente quanto melhores amigos podem virar estranhos."
                 Exit Select
             Case 346
-                Quote = "The most dangerous heart disease: strong memory. - Nizar Qabbani"
+                Quote = "A doença do coração mais perigosa: memória forte. - Nizar Qabbani"
                 Exit Select
             Case 347
-                Quote = "I am a very private person, yet I am an open book. If you do not ask… I will not tell."
+                Quote = "Eu sou uma pessoa muito reservada, mas também sou um livro aberto. Se você não pergunta… eu não conto."
                 Exit Select
             Case 348
-                Quote = "Don't be so quick to believe what you hear, because lies spread quicker than the truth."
+                Quote = "Não acredite tão rápido no que você ouve, porque mentiras se espalham mais rápido do que a verdade."
                 Exit Select
             Case 349
-                Quote = "I no longer look for the good in people, I search for the real… because while good is often dressed in fake clothing, real is naked and proud no matter the scars. - Chishala Lishomwa"
+                Quote = "Eu já não procuro o ""bom"" nas pessoas; eu procuro o real… porque o bom muitas vezes vem vestido de falsidade, mas o real é nu e orgulhoso, não importa as cicatrizes. - Chishala Lishomwa"
                 Exit Select
             Case 350
-                Quote = "I like people I can have comfortable silences with."
+                Quote = "Eu gosto de pessoas com quem eu consigo ter silêncios confortáveis."
                 Exit Select
             Case 351
-                Quote = "Technology has connected the world and disconnected all the humans."
+                Quote = "A tecnologia conectou o mundo e desconectou os humanos."
                 Exit Select
             Case 352
-                Quote = "You don't have to be positive all the time. It's perfectly okay to feel sad, angry, annoyed, frustrated, scared, or anxious. Having feelings doesn't make you 'negative person'. It makes you human. - Lori Deschene"
+                Quote = "Você não precisa ser positivo o tempo todo. Está tudo bem se sentir triste, com raiva, irritado, frustrado, com medo ou ansioso. Ter sentimentos não faz de você uma ""pessoa negativa"". Faz de você humano. - Lori Deschene"
                 Exit Select
             Case 353
-                Quote = "Sometimes you gotta remember, everyone wasn't raised like you."
+                Quote = "Às vezes você precisa lembrar: nem todo mundo foi criado do jeito que você foi."
                 Exit Select
             Case 354
-                Quote = "Half the world is starving and the other half is trying to lose weight. - Roseanne Barr"
+                Quote = "Metade do mundo passa fome e a outra metade tenta emagrecer. - Roseanne Barr"
                 Exit Select
             Case 355
-                Quote = "We all need someone to talk to, someone who listens, someone who understands."
+                Quote = "Todos nós precisamos de alguém para conversar — alguém que ouça, alguém que entenda."
                 Exit Select
             Case 356
-                Quote = "I have no time to battle egos and small minds."
+                Quote = "Eu não tenho tempo para brigar com egos e mentes pequenas."
                 Exit Select
             Case 357
-                Quote = "Sometimes… when you give a fuck. That fuck, fucks you up."
+                Quote = "Às vezes… quando você dá a mínima demais, isso acaba te derrubando."
                 Exit Select
             Case 358
-                Quote = "No reason to stay, is a good reason to go."
+                Quote = "Não ter motivo para ficar é um bom motivo para ir embora."
                 Exit Select
             Case 359
-                Quote = "Smile. No one cares how you feel."
+                Quote = "Sorria. Ninguém se importa com como você se sente."
                 Exit Select
             Case 360
-                Quote = "I'm becoming more silent these days. I'm speaking less and less in public. But my eyes, god damn, my eyes see everything."
+                Quote = "Ando ficando mais calado esses dias. Falo cada vez menos em público. Mas meus olhos… meus olhos veem tudo."
                 Exit Select
             Case 361
-                Quote = "Magic happens when you don't give up, even though you want to. The universe always falls in love with a stubborn heart. - JmStorm"
+                Quote = "A magia acontece quando você não desiste, mesmo querendo desistir. O universo sempre se apaixona por um coração teimoso. - JmStorm"
                 Exit Select
             Case 362
-                Quote = "Someday we will find what we are looking for. Or maybe we won't, Maybe we will find something much greater than that."
+                Quote = "Um dia vamos encontrar o que estamos procurando. Ou talvez não. Talvez encontremos algo muito maior do que isso."
                 Exit Select
             Case 363
-                Quote = "Don't be the reason someone feels insecure. Be the reason someone feels seen, heard, and supported by the whole universe. - Cleo Wade"
+                Quote = "Não seja o motivo de alguém se sentir inseguro. Seja o motivo de alguém se sentir visto, ouvido e apoiado pelo universo inteiro. - Cleo Wade"
                 Exit Select
             Case 364
-                Quote = "The world is going to judge you no matter what you do, so live your life the way you fucking want to."
+                Quote = "O mundo vai te julgar, não importa o que você faça. Então viva sua vida do jeito que você realmente quer."
                 Exit Select
             Case 365
-                Quote = "I love the 3 am version of people. Vulnerable. Honest. Real."
+                Quote = "Eu amo a versão das pessoas às 3 da manhã: vulnerável, honesta, real."
                 Exit Select
             Case 366
-                Quote = "I'm Cold As Ice. But In The Right Hands, I'll Melt."
+                Quote = "Eu sou frio como gelo. Mas, nas mãos certas, eu derreto."
                 Exit Select
             Case 367
-                Quote = "Everything comes to you. In the right moment. Be patient. Be grateful."
+                Quote = "Tudo chega até você, no momento certo. Tenha paciência. Seja grato."
                 Exit Select
             Case 368
-                Quote = "Hope but never expect. Look forward but never wait."
+                Quote = "Tenha esperança, mas não espere demais. Olhe para frente, mas não fique parado esperando."
                 Exit Select
             Case 369
-                Quote = "When you start looking at people's hearts instead of their faces, life becomes clear."
+                Quote = "Quando você começa a olhar para o coração das pessoas em vez do rosto, a vida fica mais clara."
                 Exit Select
             Case 370
-                Quote = "Between what is said and not meant, and what is meant and not said, most of love is lost. - Kahlil Gibran"
+                Quote = "Entre o que é dito sem intenção e o que é sentido mas não é dito, muito do amor se perde. - Kahlil Gibran"
                 Exit Select
             Case 371
-                Quote = "Patience is when you're supposed to get mad, but you choose to understand."
+                Quote = "Paciência é quando você tinha motivo para ficar bravo, mas escolhe entender."
                 Exit Select
             Case 372
-                Quote = "We meet everyone for a reason. Either they're a blessing or a lesson."
+                Quote = "A gente conhece todo mundo por um motivo. Ou é uma bênção, ou é uma lição."
                 Exit Select
             Case 373
-                Quote = "Fake people have an image to maintain. Real people just don't give it a fuck."
+                Quote = "Gente falsa tem uma imagem para manter. Gente de verdade simplesmente não se importa."
                 Exit Select
             Case 374
-                Quote = "Be alone. Eat alone, take yourself on dates, sleep alone. In the midst of this you will learn about yourself. You will grow, you will figure out what inspires you, you will curate your own dreams, your own beliefs, your own stunning clarity, and when you do meet the person who makes your cells dance, you will be sure of it, because you are sure of yourself. - Bianca Sparacino"
+                Quote = "Fique sozinho. Coma sozinho, saia consigo mesmo, durma sozinho. No meio disso, você aprende sobre você, cresce, descobre o que te inspira, constrói seus sonhos e crenças, ganha clareza. E quando encontrar alguém que faça seu corpo vibrar, você vai ter certeza — porque você tem certeza de si. - Bianca Sparacino"
                 Exit Select
             Case 375
-                Quote = "You don't always need a logical reason for doing everything in your life. Do it because you want to, because it's fun, because it makes you HAPPY."
+                Quote = "Você nem sempre precisa de uma razão lógica para tudo. Faça porque você quer, porque é divertido, porque te faz FELIZ."
                 Exit Select
             Case 376
-                Quote = "Don't worry if you're not where you want to be. Great things take time."
+                Quote = "Não se preocupe se você ainda não está onde queria. Coisas grandes levam tempo."
                 Exit Select
             Case 377
-                Quote = "Say what you feel. It's not being rude, It's called being real."
+                Quote = "Diga o que você sente. Isso não é grosseria — é ser real."
                 Exit Select
             Case 378
-                Quote = "I don’t have a short temper, I just have a quick reaction to bullshit."
+                Quote = "Eu não tenho pavio curto; eu só reajo rápido a bobagem."
                 Exit Select
             Case 379
-                Quote = "Don't climb mountains so that people can see you. Climb mountains so that you can see the world."
+                Quote = "Não escale montanhas para que as pessoas vejam você. Escale para que você veja o mundo."
                 Exit Select
             Case 380
-                Quote = "The problem with the world is that the intelligent people are full of doubts, while the stupid ones are full of confidence. - Charles Bukowski"
+                Quote = "O problema do mundo é que as pessoas inteligentes ficam cheias de dúvidas, enquanto as pessoas tolas ficam cheias de certezas. - Charles Bukowski"
                 Exit Select
             Case 381
-                Quote = "When you die they won't remember your car or house. They will remember who you were. Be a good human, not a good materialist."
+                Quote = "Quando você morrer, não vão lembrar do seu carro ou da sua casa. Vão lembrar de quem você foi. Seja uma boa pessoa, não apenas alguém preso a coisas materiais."
                 Exit Select
             Case 382
-                Quote = "I love it when someone's laugh is funnier than the joke."
+                Quote = "Eu adoro quando a risada de alguém é mais engraçada do que a piada."
                 Exit Select
             Case 383
-                Quote = "You never know what people are going through and sometimes the people with the biggest smiles are struggling the most, so be kind."
+                Quote = "Você nunca sabe o que as pessoas estão passando. Às vezes, quem sorri mais é quem mais luta. Seja gentil."
                 Exit Select
             Case 384
-                Quote = "Don't confuse my personality with my attitude… My personality is who I am. My attitude depends on who you are…"
+                Quote = "Não confunda minha personalidade com minha atitude… Minha personalidade é quem eu sou. Minha atitude depende de quem você é…"
                 Exit Select
             Case 385
-                Quote = "We mature with the damage, not with the years."
+                Quote = "A gente amadurece com os danos, não com os anos."
                 Exit Select
             Case 386
-                Quote = "Who are you?' 'Demon to some. Angel to others.'"
+                Quote = "Quem é você? 'Demônio para alguns. Anjo para outros.'"
                 Exit Select
             Case 387
-                Quote = "Some people think I'm unhappy, but I'm not. I just appreciate silence in a world that never stops talking."
+                Quote = "Alguns acham que eu sou infeliz, mas não sou. Eu só valorizo o silêncio num mundo que não para de falar."
                 Exit Select
             Case 388
-                Quote = "If everybody likes you, you have a serious problem."
+                Quote = "Se todo mundo gosta de você, você tem um problema sério."
                 Exit Select
             Case 389
-                Quote = "Don't allow someone to treat you poorly just because you love them."
+                Quote = "Não deixe alguém te tratar mal só porque você ama essa pessoa."
                 Exit Select
             Case 390
-                Quote = "Behind every successful woman is Herself."
+                Quote = "Por trás de toda mulher bem-sucedida, está ela mesma."
                 Exit Select
             Case 391
-                Quote = "I was quiet, but I was not blind. - Jane Austen"
+                Quote = "Eu era quieta, mas não era cega. - Jane Austen"
                 Exit Select
             Case 392
-                Quote = "So, if you are too tired to speak, sit next to me, because I, too, am fluent in silence. - R. Arnold"
+                Quote = "Então, se você estiver cansado demais para falar, sente ao meu lado, porque eu também sou fluente em silêncio. - R. Arnold"
                 Exit Select
             Case 393
-                Quote = "Don't study me.. you won't graduate."
+                Quote = "Não me estude… você não vai se formar."
                 Exit Select
             Case 394
-                Quote = "When I was 17, I used to admire people with luxuries. Now, I admire people with inner-peace."
+                Quote = "Quando eu tinha 17 anos, eu admirava pessoas com luxo. Hoje, eu admiro pessoas com paz interior."
                 Exit Select
             Case 395
-                Quote = "Being both soft and strong is a combination very few have mastered."
+                Quote = "Ser ao mesmo tempo sensível e forte é uma combinação que poucos dominam."
                 Exit Select
             Case 396
-                Quote = "Stay close to anything that makes you glad you are alive."
+                Quote = "Fique perto de tudo o que te faz feliz por estar vivo."
                 Exit Select
             Case 397
-                Quote = "Beautiful faces are everywhere but beautiful minds are hard to find."
+                Quote = "Rostos bonitos estão por toda parte, mas mentes bonitas são difíceis de encontrar."
                 Exit Select
             Case 398
-                Quote = "We are not given a good life or a bad life. We have a life. It's up to us to make it good or bad. - Ward Foley"
+                Quote = "Não recebemos uma vida boa ou ruim. Recebemos uma vida. Cabe a nós torná-la boa ou ruim. - Ward Foley"
                 Exit Select
             Case 399
-                Quote = "I want to remember that no one is going to make my dreams come true for me. It is my job to get up everyday and work towards things that are deepest in my heart and to enjoy every step of the journey rather than wishing I was already where I wanted to end up."
+                Quote = "Quero lembrar que ninguém vai realizar meus sonhos por mim. É meu trabalho levantar todo dia e caminhar na direção do que é mais profundo no meu coração, aproveitando cada passo da jornada em vez de desejar já estar no fim."
                 Exit Select
             Case 400
-                Quote = "What consumes your mind, controls your life."
+                Quote = "O que ocupa sua mente controla sua vida."
                 Exit Select
             Case 401
-                Quote = "About me: I can be mean as fuck. Sweet as candy. Cold as ice. Evil as hell. Or loyal like a soldier. It all depends on you."
+                Quote = "Sobre mim: posso ser bem duro. Doce como bala. Frio como gelo. Ou leal como um soldado. Tudo depende de você."
                 Exit Select
             Case 402
-                Quote = "Best therapy sometimes is a drive and music."
+                Quote = "Às vezes, a melhor terapia é pegar a estrada e ouvir música."
                 Exit Select
             Case 403
-                Quote = "I hope I never get tired of the night sky, of thunderstorms, of watching cream make galaxies in my coffee. I hope I never grow to someone who can no longer see the small beautiful things."
+                Quote = "Espero nunca me cansar do céu noturno, das tempestades, de ver o creme formar galáxias no café. Espero nunca me tornar alguém que não enxerga mais as pequenas coisas bonitas."
                 Exit Select
             Case 404
-                Quote = "I love places that make you realize how tiny you and YOUR problems are."
+                Quote = "Eu amo lugares que fazem você perceber o quão pequeno você — e seus problemas — são."
                 Exit Select
             Case 405
-                Quote = "Sometimes people hurt you and act like you hurt them."
+                Quote = "Às vezes as pessoas te machucam e ainda agem como se você tivesse machucado elas."
                 Exit Select
             Case 406
-                Quote = "I am a different person to different people. Annoying to one. Talented to another. Quiet to a few. Unknown to a lot. But who am I, to me? - dream-jackson"
+                Quote = "Eu sou uma pessoa diferente para pessoas diferentes: irritante para um, talentoso para outro, quieto para alguns, desconhecido para muitos. Mas quem eu sou para mim? - dream-jackson"
                 Exit Select
             Case 407
-                Quote = "Let things come and go. The things that are meant to stay will stay."
+                Quote = "Deixe as coisas irem e virem. O que for para ficar, vai ficar."
                 Exit Select
             Case 408
-                Quote = "Anyone can say they care.. But watch their actions, not their words."
+                Quote = "Qualquer um pode dizer que se importa… observe as ações, não as palavras."
                 Exit Select
             Case 409
-                Quote = "Sometimes things have to go very wrong before they can be right."
+                Quote = "Às vezes, as coisas precisam dar muito errado antes de dar certo."
                 Exit Select
             Case 410
-                Quote = "The best thing about the worst time of your life is that you get to see the true colors of everyone."
+                Quote = "A melhor coisa do pior momento da sua vida é que você vê as verdadeiras cores de todo mundo."
                 Exit Select
             Case 411
-                Quote = "The best is yet to come. Be patient."
+                Quote = "O melhor ainda está por vir. Tenha paciência."
                 Exit Select
             Case 412
-                Quote = "Not everyone deserves to know the real you. Let them criticize who they think you are."
+                Quote = "Nem todo mundo merece conhecer o seu eu verdadeiro. Deixe que critiquem quem eles acham que você é."
                 Exit Select
             Case 413
-                Quote = "Our character is not defined by the battles we win or lose, but by the battles we dare to fight."
+                Quote = "Nosso caráter não é definido pelas batalhas que vencemos ou perdemos, mas pelas batalhas que temos coragem de lutar."
                 Exit Select
             Case 414
-                Quote = "You will never understand until it happens to you."
+                Quote = "Você nunca vai entender até acontecer com você."
                 Exit Select
             Case 415
-                Quote = "Once you feel you're avoided by someone, Never disturb them again."
+                Quote = "Quando você sentir que alguém está te evitando, não insista mais."
                 Exit Select
             Case 416
-                Quote = "Sometimes you need bad things to happen to inspire you to change and grow."
+                Quote = "Às vezes, coisas ruins precisam acontecer para te inspirar a mudar e crescer."
                 Exit Select
             Case 417
-                Quote = "Never fuck with someone who is not afraid to be alone. You will lose every single time."
+                Quote = "Não mexa com alguém que não tem medo de ficar sozinho. Você vai perder todas as vezes."
                 Exit Select
             Case 418
-                Quote = "Be the same person privately, publically and personally."
+                Quote = "Seja a mesma pessoa no privado, no público e no pessoal."
                 Exit Select
             Case 419
-                Quote = "The broken will always be able to love harder than most. Once you've been in the dark, you learn to appreciate everything that shines."
+                Quote = "Quem já se quebrou sempre consegue amar mais forte do que a maioria. Depois de estar no escuro, você aprende a valorizar tudo o que brilha."
                 Exit Select
             Case 420
-                Quote = "It's hard to find a friend who's cute, loving, generous, sexy, caring, and smart. My advice to all my friends. Don't lose me."
+                Quote = "É difícil achar um amigo fofo, amoroso, generoso, atraente, cuidadoso e inteligente. Meu conselho a todos os meus amigos: não me percam."
                 Exit Select
             Case 421
-                Quote = "Never let somebody waste your time, twice."
+                Quote = "Nunca deixe alguém desperdiçar o seu tempo duas vezes."
                 Exit Select
             Case 422
-                Quote = "Not giving a fuck is better than revenge."
+                Quote = "Não dar a mínima é melhor do que vingança."
                 Exit Select
             Case 423
-                Quote = "There are friends, there is family, and then there are friends that become family."
+                Quote = "Há amigos, há família… e há amigos que viram família."
                 Exit Select
             Case 424
-                Quote = "Deep in my heart I know I am a loner. I have tried to blend in with the world and be sociable, but the more people I meet the more disappointed I am, so I've learned to enjoy myself, my family and a few good friends. - Steven Aitchison"
+                Quote = "No fundo do meu coração, eu sei que sou um solitário. Eu tentei me misturar ao mundo e ser sociável, mas quanto mais pessoas eu conheço, mais eu me decepciono. Então aprendi a aproveitar a mim mesmo, minha família e alguns bons amigos. - Steven Aitchison"
                 Exit Select
             Case 425
-                Quote = "Fuck your shoe collection. Show me your book collection."
+                Quote = "Que se dane sua coleção de sapatos. Me mostre sua coleção de livros."
                 Exit Select
             Case 426
-                Quote = "The ego wants quantity but the soul wants quality."
+                Quote = "Pare de pensar demais. Você está arruinando sua felicidade."
                 Exit Select
             Case 427
-                Quote = "The key to a woman's heart is hidden in her playlist."
+                Quote = "O problema não é que eu não tenho tempo. O problema é que eu não tenho energia."
                 Exit Select
             Case 428
-                Quote = "I've got a good heart but this mouth."
+                Quote = "Pessoas que se importam de verdade não te fazem questionar isso."
                 Exit Select
             Case 429
-                Quote = "And if today, all you did was hold yourself together, I'm proud of you."
+                Quote = "Se alguém quer você na vida dela, vai abrir espaço. Sem desculpas. Sem esforço pela metade."
                 Exit Select
             Case 430
-                Quote = "Fuck excuses, learn to admit when you fuck up."
+                Quote = "Você pode sentir falta de alguém e ainda assim reconhecer que ela não é boa para você."
                 Exit Select
             Case 431
-                Quote = "Care less, you'll be less stressed."
+                Quote = "Aprenda a se desapegar do que te faz mal."
                 Exit Select
             Case 432
-                Quote = "Do yourself a favor and learn how to walk away. When a connection starts to fade, Learn how to let it go. When a person starts to mistreat you, learn how to move on.. To something and someone better. Don't waste your energy trying to force something that isn't meant to be.. Because the truth is.. for every one person who doesn't value you there are tons more waiting to love you better. Do better. - Reyna Biddy"
+                Quote = "Seja maduro o suficiente para pedir desculpas, inteligente o suficiente para aprender com isso e forte o bastante para não repetir."
                 Exit Select
             Case 433
-                Quote = "They keep saying that beautiful is something a girl needs to be. But honestly? Forget that. Don't be beautiful. Be angry, be intelligent, be witty, be klutzy, be interesting, be funny, be adventurous, be crazy, be talented - there are an eternity of other things to be other than beautiful. And what is beautiful anyway but a set of letters strung together to make a word? Be your own is so much more important than anything beautiful, ever. - Nikita Gill"
+                Quote = "Às vezes, a melhor resposta é o silêncio."
                 Exit Select
             Case 434
-                Quote = "I'm both: introvert and extrovert. I like people, but I need to be alone. I'll go out, vibe and meet new people but it has an expiration, because I have to recharge. If I don't find the valuable alone time I need to recharge I cannot be my highest self. - Sylvester McNutt III"
+                Quote = "Se você se importa demais, vai se machucar demais."
                 Exit Select
             Case 435
-                Quote = "Don't admire people too much. They might disappoint you."
+                Quote = "A sua paz é mais importante do que provar seu ponto."
                 Exit Select
             Case 436
-                Quote = "Be patient. Sometimes you have to go through the worst to get to the best."
+                Quote = "Quanto menos você espera, menos você se decepciona."
                 Exit Select
             Case 437
-                Quote = "A friend is someone who listens to your bullshit, tells you that it is bullshit and listens some more."
+                Quote = "Faça o que é certo, mesmo quando ninguém estiver olhando."
                 Exit Select
             Case 438
-                Quote = "Listen to many, trust few."
+                Quote = "Seja gentil, mas não seja bobo."
                 Exit Select
             Case 439
-                Quote = "But luxury has never appealed to me, I like simply things, books, being alone, or with somebody who understands. - Daphne du Maurier"
+                Quote = "Não mude por ninguém. Mude por você."
                 Exit Select
             Case 440
-                Quote = "Don't underestimate the healing power of these three things… Music. The Ocean. Stars."
+                Quote = "O universo sempre dá um jeito de colocar as pessoas certas no seu caminho."
                 Exit Select
             Case 441
-                Quote = "Sometimes you just need an adventure to cleanse the bitter taste of life from your soul."
+                Quote = "Você não precisa convencer ninguém do seu valor."
                 Exit Select
             Case 442
-                Quote = "Take off the mask when you are speaking to me."
+                Quote = "A solidão não é vazia; ela é cheia de respostas."
                 Exit Select
             Case 443
-                Quote = "If you can't be kind, be quiet."
+                Quote = "Não seja disponível para quem só te procura quando convém."
                 Exit Select
             Case 444
-                Quote = "I love straightforward people. The lack of drama makes life so much easier."
+                Quote = "Algumas pessoas entram na sua vida só para te ensinar a sair dela."
                 Exit Select
             Case 445
-                Quote = "Never be a prisoner of your past, it was just a lesson not a life sentence."
+                Quote = "Se você não se curar do que te feriu, vai sangrar em quem não te cortou."
                 Exit Select
             Case 446
-                Quote = "Notice the people who make an effort to stay in your life."
+                Quote = "Nem todo mundo merece acesso à sua energia."
                 Exit Select
             Case 447
-                Quote = "It's the maybes that will kill you."
+                Quote = "Não confunda atenção com amor."
                 Exit Select
             Case 448
-                Quote = "Really is the mood for a long drive with no real destination."
+                Quote = "Você merece alguém que fique — não alguém que vai e volta."
                 Exit Select
             Case 449
-                Quote = "I'm nice as fuck. So if you see me being mean to someone, they earned that shit."
+                Quote = "Você não precisa ter tudo resolvido para seguir em frente."
                 Exit Select
             Case 450
-                Quote = "I'm too insane to explain and you're too normal to understand."
+                Quote = "Faça as pazes com o fato de que nem todo mundo vai gostar de você."
                 Exit Select
             Case 451
-                Quote = "Classy is when you have a lot to say but you choose to remain silent in front of fools.'"
+                Quote = "Você não perde pessoas; você se livra de lições."
                 Exit Select
             Case 452
-                Quote = "Q: Do you hate people? A: I don't hate them… I just feel better when they're not around. - Charles Bukowski"
+                Quote = "Não leve tudo para o lado pessoal. Nem tudo é sobre você."
                 Exit Select
             Case 453
-                Quote = "Apology Accepted. Trust Denied. - Malak Tamer"
+                Quote = "Você não deve explicações para quem não te respeita."
                 Exit Select
             Case 454
-                Quote = "If we wait until we're ready, we'll be waiting for the rest of our lives."
+                Quote = "Se alguém te quiser, vai te tratar como prioridade."
                 Exit Select
             Case 455
-                Quote = "It's amazing how 3 minutes with the wrong person feels like an eternity, yet 3 hours with the right one, feels like only a moment."
+                Quote = "A felicidade é uma escolha diária."
                 Exit Select
             Case 456
-                Quote = "I wish people could drink their words and realize how bitter they taste."
+                Quote = "Você não precisa agradar todo mundo. Você precisa se respeitar."
                 Exit Select
             Case 457
-                Quote = "Never discourage anyone who continually makes progress, no matter how slow."
+                Quote = "Não tenha medo de recomeçar. Dessa vez, você não está começando do zero — está começando com experiência."
                 Exit Select
             Case 458
-                Quote = "You will never understand the damage you did to someone until the same thing is done to you. That's why I'm here. - Karma."
+                Quote = "Às vezes, dizer ""não"" é autocuidado."
                 Exit Select
             Case 459
-                Quote = "Don't consider my kindness as my weakness. The beast in me is sleeping, not dead."
+                Quote = "O que é para você não passa por você."
                 Exit Select
             Case 460
-                Quote = "I hate when people ask me 'Why are you so quiet?' Because I am. That's how I function. I don’t ask others 'Why are you so noisy? Why do talk so much?' That's rude."
+                Quote = "Você é mais forte do que pensa e mais capaz do que imagina."
                 Exit Select
             Case 461
-                Quote = """You're gonna be happy"" said the life ""but first I'll make you strong."""
+                Quote = "Não confie palavras bonitas. Confie consistência."
                 Exit Select
             Case 462
-                Quote = "Sometimes the hardest battle is against yourself."
+                Quote = "Crescer dói. Mudar dói. Mas não mudar dói ainda mais."
                 Exit Select
             Case 463
-                Quote = "Call me crazy but I love to see people happy and succeeding. Life is a journey, not a competition."
+                Quote = "A vida é curta demais para correr atrás de quem não corre por você."
                 Exit Select
             Case 464
-                Quote = "And those who are heartless once cared too much."
+                Quote = "Algumas pessoas não são ruins; só não são para você."
                 Exit Select
             Case 465
-                Quote = "The things left unsaid stay with us forever."
+                Quote = "Não é egoísmo escolher você."
                 Exit Select
             Case 466
-                Quote = "Sometimes, I just want someone to hug me and say, ""I know it's hard. You are going to be okay. Here is chocolate and 6 million dollars."""
+                Quote = "Você não precisa se justificar para se proteger."
                 Exit Select
             Case 467
-                Quote = "We are often let down by the most trusted people and loved by the most unexpected ones. Some make us cry for things that we haven't done, while others ignore our faults and just see our smile. Some leave us when we need them the most, while some stay with us even when ask them to leave. The world is a mixture of people. We just need to know which hand to shake and which hand to hold! After all that's life, learning to hold on and learning to let go."
+                Quote = "Não se apegue ao que te custa paz."
                 Exit Select
             Case 468
-                Quote = "I am built from every mistake I have ever made."
+                Quote = "O tempo revela intenções."
                 Exit Select
             Case 469
-                Quote = "The key to happiness is low expectations. Lower. Nope, even lower. There you go."
+                Quote = "Siga em frente. O que é seu te encontra."
                 Exit Select
             Case 470
-                Quote = "Honestly, my goal is to build a life, and career, where I'm not constantly waiting for the weekend. I don't want to live that way, where I hate five days of the week because I hate my life and job so much, that the only relief I get is Saturday and Sunday. I want to enjoy my life, and not wish it away every week. I want each day to matter to me, in some way, even some small way. I want to like my life, all of it, not just my life on the weekend."
+                Quote = "A maior prova de amor-próprio é ir embora do que te diminui."
                 Exit Select
             Case 471
-                Quote = "Sometimes we have to stop being scared and just go for it. Either it will work or it won't. That's life."
+                Quote = "Você não pode salvar alguém que não quer ser salvo."
                 Exit Select
             Case 472
-                Quote = "When you fully trust someone without any doubt, you finally get one of two results: A person for life or A lesson for life.."
+                Quote = "Uma mente em paz vale mais do que qualquer coisa."
                 Exit Select
             Case 473
-                Quote = "Never say ""That won't happen to me."" Life has a funny way of proving us wrong."
+                Quote = "Não espere que as pessoas sejam como você."
                 Exit Select
             Case 474
-                Quote = "Always be in love with a soul, not a face."
+                Quote = "Aprenda a dizer ""chega"" sem se sentir culpado."
                 Exit Select
             Case 475
-                Quote = "It takes two people to build a relationship. Not one person chasing after the other."
+                Quote = "Às vezes, o fechamento que você precisa é aceitar e seguir."
                 Exit Select
             Case 476
-                Quote = "A private life is a happy life."
+                Quote = "Cuide de você como você cuida dos outros."
                 Exit Select
             Case 477
-                Quote = "If you want it, go for it. Take a risk. Don't always play it safe or you'll die wondering."
+                Quote = "Quem te respeita não te coloca em dúvida."
                 Exit Select
             Case 478
-                Quote = """Judge Me When you are perfect."""
+                Quote = "Você não precisa de permissão para se afastar."
                 Exit Select
             Case 479
-                Quote = "Admit it. You're not like the others. And that's not just okay, it's fucking beautiful."
+                Quote = "Não confunda dependência com amor."
                 Exit Select
             Case 480
-                Quote = "Do good for others. It will come back in unexpected ways. - Karen Salmansohn"
+                Quote = "Faça o bem aos outros. Isso volta de formas inesperadas. - Karen Salmansohn"
                 Exit Select
             Case 481
-                Quote = "Keep your distance from people who will never admit they are wrong and who always try to make you feel like it's your fault."
+                Quote = "Mantenha distância de pessoas que nunca admitem que estão erradas e sempre tentam fazer você sentir que a culpa é sua."
                 Exit Select
             Case 482
-                Quote = "If someone drunk texts you, appreciate it, they're thinking of you when they can barely think straight."
+                Quote = "Se alguém bêbado te manda mensagem, valorize: mesmo mal conseguindo pensar direito, a pessoa pensou em você."
                 Exit Select
             Case 483
-                Quote = "The sun watches what I do, but the moon knows all my secrets. - J.M. Wonderland"
+                Quote = "O sol vê o que eu faço, mas a lua conhece todos os meus segredos. - J.M. Wonderland"
                 Exit Select
             Case 484
-                Quote = "I have more conversations in my head than I do in real life."
+                Quote = "Tenho mais conversas na minha cabeça do que na vida real."
                 Exit Select
             Case 485
-                Quote = "If overthinking situations burned calories, I'd be dead."
+                Quote = "Se pensar demais queimasse calorias, eu já estaria morto."
                 Exit Select
             Case 486
-                Quote = "Sometimes you have to play the role of a fool to fool the fool who thinks they are fooling you."
+                Quote = "Às vezes você tem que fazer o papel de bobo para enganar o bobo que acha que está te enganando."
                 Exit Select
             Case 487
-                Quote = "You see a person's true colors when you are no longer beneficial to their life."
+                Quote = "Você vê as verdadeiras cores de alguém quando você deixa de ser útil para a vida dela."
                 Exit Select
             Case 488
-                Quote = "I'm not impressed by money, social status or job title. I'm impressed by the way someone treats other human beings."
+                Quote = "Não me impressiono com dinheiro, status social ou cargo. Eu me impressiono com a forma como alguém trata outros seres humanos."
                 Exit Select
             Case 489
-                Quote = "Let it all go. See what stays."
+                Quote = "Pessoas falsas não me surpreendem mais; pessoas leais, sim."
                 Exit Select
             Case 490
-                Quote = "If you want to be trusted, be honest."
+                Quote = "Crescer dói. Mudar dói. Mas nada dói tanto quanto ficar preso em um lugar onde você não pertence."
                 Exit Select
             Case 491
-                Quote = "Being ""raised right"" doesn't mean you don't drink, party, and smoke. Being raised right is how you treat people, your manners & respect."
+                Quote = "Sempre admire pessoas que mudam para melhor."
                 Exit Select
             Case 492
-                Quote = "Silence isn't empty, it's full of answers."
+                Quote = "Onde há amor, há vida. - Mahatma Gandhi"
                 Exit Select
             Case 493
-                Quote = "Go for it. Whether it ends good or bad, it was an experience."
+                Quote = "Eu queria voltar no tempo. Não para mudar as coisas, mas para sentir algumas coisas duas vezes."
                 Exit Select
             Case 494
-                Quote = "When you are dead, you won't even know that you are dead. It's a pain only felt by others. Same thing when you are stupid."
+                Quote = "Quando alguém faz você se sentir mal por se importar, essa pessoa não merece você."
                 Exit Select
             Case 495
-                Quote = "I don't like forced conversations, forced friendships, forced interactions. I simply do not force things. If we do not vibe, we don't vibe."
+                Quote = "Posso ser teimoso, impaciente e, às vezes, inseguro. Eu cometo erros, saio do controle e posso ser difícil. Mas, apesar de tudo isso, eu sei que, no fundo, eu tenho um coração enorme."
                 Exit Select
             Case 496
-                Quote = "The world is full of monsters with friendly faces & angels full of Scars."
+                Quote = "Me conte seus sonhos e eu te digo se são reais."
                 Exit Select
             Case 497
-                Quote = "My favourite kind of friendship is one where there's a mutual understanding of the fact that we both have our own lives so we won't be able to talk or hang out all the time but when we talk or hang out it's like picking up right where we left off. - starksfell"
+                Quote = "Você não ganha pontos extras por fazer certas coisas até um prazo. Vá no seu ritmo. Não é uma corrida."
                 Exit Select
             Case 498
-                Quote = "Just as general note, You should eliminate any thought that there is an expectation that you do anything by any age.. You don't have to be married with kids by 25.. It's ok to be 16 and never been kissed.. There's nothing wrong with you if you haven't graduated from college by 22.. You're not a failure because you don't have your dream job at 30.. There are no rules to life. You don't get special points for achieving certain things by a deadline. Just go at your own speed. It's not a race."
+                Quote = "Ações provam quem alguém é; palavras só provam quem ela finge ser."
                 Exit Select
             Case 499
-                Quote = "Actions prove who someone is, words just prove who they pretend to be."
+                Quote = "Ações provam quem alguém é; palavras só provam quem ela finge ser."
                 Exit Select
             Case 500
-                Quote = "Sometimes having coffee with your best friend, is all the therapy you need."
+                Quote = "Às vezes, tomar um café com seu melhor amigo é toda a terapia de que você precisa."
                 Exit Select
             Case 501
-                Quote = "Character is how you treat someone who can do nothing for you. - Johann Wolfgang von Goethe"
+                Quote = "Caráter é como você trata alguém que não pode fazer nada por você. - Johann Wolfgang von Goethe"
                 Exit Select
             Case 502
-                Quote = "Sometimes the greatest adventure is simply a conversation."
+                Quote = "Às vezes, a maior aventura é simplesmente uma conversa."
                 Exit Select
             Case 503
-                Quote = "I am terribly sorry if you don't like my harsh honesty. But, I don't like your sugar-coated bullshit either."
+                Quote = "Peço desculpas se você não gosta da minha honestidade dura. Mas eu também não gosto da sua falsidade açucarada."
                 Exit Select
             Case 504
-                Quote = "How he treats you is how he feels about you."
+                Quote = "A forma como ele te trata é como ele se sente sobre você."
                 Exit Select
             Case 505
-                Quote = "Don't make excuse for mean people. You can't put flowers in an asshole and call it a vase."
+                Quote = "Não arrume desculpas para pessoas ruins. Você não coloca flores num babaca e chama de vaso."
                 Exit Select
             Case 506
-                Quote = "But darling… In the end, you have to be your own hero, because everyone is busy trying to save themselves."
+                Quote = "Mas, meu bem… no fim, você precisa ser seu próprio herói, porque todo mundo está ocupado tentando se salvar."
                 Exit Select
             Case 507
-                Quote = "Tomorrow, is the first blank page of a 365 page book. Write a good one. - Brad Paisley"
+                Quote = "Amanhã é a primeira página em branco de um livro de 365 páginas. Escreva uma boa história. - Brad Paisley"
                 Exit Select
             Case 508
-                Quote = "Travel and tell no one, live a true love story and tell no one, live happily and tell no one, people ruin beautiful things. - Kahlil Gibran"
+                Quote = "Viaje e não conte a ninguém; viva uma história de amor de verdade e não conte a ninguém; seja feliz e não conte a ninguém — as pessoas estragam coisas bonitas. - Kahlil Gibran"
                 Exit Select
             Case 509
-                Quote = "Prove yourself to yourself not others."
+                Quote = "Prove para você mesmo, não para os outros."
                 Exit Select
             Case 510
-                Quote = "No more expectations, just gonna go with the flow and whatever happens, happens."
+                Quote = "Sem mais expectativas; vou seguir o fluxo e, o que acontecer, aconteceu."
                 Exit Select
             Case 511
-                Quote = "I wish my life had background music so I could understand what the hell is going on."
+                Quote = "Queria que minha vida tivesse música de fundo para eu entender o que diabos está acontecendo."
                 Exit Select
             Case 512
-                Quote = """why Do you only have Like 5 friends?"" Me: ""quality Not quantity."""
+                Quote = """Por que você só tem tipo 5 amigos?"" Eu: ""qualidade, não quantidade."""
                 Exit Select
             Case 513
-                Quote = "A soulmate is someone who appreciates your level of weird."
+                Quote = "Uma alma gêmea é alguém que aprecia o seu nível de esquisitice."
                 Exit Select
             Case 514
-                Quote = "Falling in love is easy. Having sex is easier. But bumping into someone that can spark your soul, that shit is rare."
+                Quote = "Apaixonar-se é fácil. Fazer sexo é mais fácil. Mas trombar com alguém que acende a sua alma… isso é raro."
                 Exit Select
             Case 515
-                Quote = "Stop overthinking and quit making up problems that don’t exist."
+                Quote = "Pare de pensar demais e de inventar problemas que não existem."
                 Exit Select
             Case 516
-                Quote = "I don't get ""disappointed"" anymore, I'm just like aw again? ok lol"
+                Quote = "Eu nem fico mais ""decepcionado""; eu só penso: ah, de novo? ok kkk"
                 Exit Select
             Case 517
-                Quote = "Sometimes, happy memories hurt the most."
+                Quote = "Às vezes, as lembranças felizes são as que mais doem."
                 Exit Select
             Case 518
-                Quote = "One bad chapter doesn't mean your story is over."
+                Quote = "Um capítulo ruim não significa que sua história acabou."
                 Exit Select
             Case 519
-                Quote = "Being too nice can be a dangerous thing sometimes."
+                Quote = "Ser bom demais às vezes pode ser perigoso."
                 Exit Select
             Case 520
-                Quote = "People will try to tell you who you are. Don't believe that shit."
+                Quote = "As pessoas vão tentar te dizer quem você é. Não acredite nisso."
                 Exit Select
             Case 521
-                Quote = "Stop chasing the wrong one. The right one won't run. - Alfa"
+                Quote = "Pare de correr atrás de quem não quer. A pessoa certa não foge. - Alfa"
                 Exit Select
             Case 522
-                Quote = "The greatest gifts you can give someone is your time, your love, and your attention. - Joel Osteen."
+                Quote = "Os maiores presentes que você pode dar a alguém são seu tempo, seu amor e sua atenção. - Joel Osteen."
                 Exit Select
             Case 523
-                Quote = "Never make fun of someone who speaks broken English. It means they know another language. - H. Jackson Brown"
+                Quote = "Nunca zombe de alguém que fala inglês ''quebrado''. Isso significa que essa pessoa sabe outra língua. - H. Jackson Brown"
                 Exit Select
             Case 524
-                Quote = "The problem is, you think you have time."
+                Quote = "O problema é que você acha que tem tempo."
                 Exit Select
             Case 525
-                Quote = "We are all in the same game, just different levels, dealing with the same hell, just different devils."
+                Quote = "Estamos todos no mesmo jogo, só em níveis diferentes; passando pelo mesmo inferno, só com demônios diferentes."
                 Exit Select
             Case 526
-                Quote = "I'm the nicest rude person ever."
+                Quote = "Sou a pessoa grosseira mais gentil que existe."
                 Exit Select
             Case 527
-                Quote = "there's a message in the way a person treats you just listen… - r.h. Sin"
+                Quote = "Existe uma mensagem no jeito como alguém te trata… é só ouvir. - r.h. Sin"
                 Exit Select
             Case 528
-                Quote = "Appreciate your rude/blunt friend.. They're always the realist."
+                Quote = "Valorize aquele amigo rude/sem papas na língua… ele sempre é o mais realista."
                 Exit Select
             Case 529
-                Quote = "It's okay if you don't like me, not everyone has good taste."
+                Quote = "Tudo bem se você não gosta de mim; nem todo mundo tem bom gosto."
                 Exit Select
             Case 530
-                Quote = "Don't kill people with kindness because not everyone deserves your kindness. Kill people with silence, because not everyone deserves your attention."
+                Quote = "Não mate as pessoas com gentileza, porque nem todo mundo merece sua gentileza. Mate com silêncio, porque nem todo mundo merece sua atenção."
                 Exit Select
             Case 531
-                Quote = "Life is so much simpler when you stop explaining yourself to people and just do what works for you."
+                Quote = "A vida fica muito mais simples quando você para de se explicar para as pessoas e só faz o que funciona para você."
                 Exit Select
             Case 532
-                Quote = "Do the right thing, even when no one is watching. It's called integrity."
+                Quote = "Faça a coisa certa, mesmo quando ninguém estiver olhando. Isso se chama integridade."
                 Exit Select
             Case 533
-                Quote = "To all the girls who no longer believe in fairy tales or happy ending: You are the writer of this story. Chin up and straighten your crown, you're the queen of this kingdom and only you know know to rule it. - B. Devine"
+                Quote = "Para todas as garotas que já não acreditam em contos de fadas ou finais felizes: você é a autora desta história. Erga a cabeça e endireite sua coroa; você é a rainha deste reino e só você sabe como governá-lo. - B. Devine"
                 Exit Select
             Case 534
-                Quote = "Remember that sometimes not getting what you want is a wonderful stroke of luck. - Dalai Lama"
+                Quote = "Lembre-se de que, às vezes, não conseguir o que você quer é uma maravilhosa sorte. - Dalai Lama"
                 Exit Select
             Case 535
-                Quote = "Three stage of life: 1. Birth 2. What the fuck is this 3. Death"
+                Quote = "Três fases da vida: 1. Nascimento 2. Que diabos é isso 3. Morte"
                 Exit Select
             Case 536
-                Quote = "My goal in 2017 is to accomplish the goals I set in 2016 which I should have done in 2015 because I made a promise in 2014 which I planned in 2013."
+                Quote = "Minha meta em 2017 é cumprir as metas que eu defini em 2016, que eu deveria ter cumprido em 2015, porque eu fiz uma promessa em 2014, que eu planejei em 2013."
                 Exit Select
             Case 537
-                Quote = "I am strong, but I am tired."
+                Quote = "Eu sou forte, mas estou cansado."
                 Exit Select
             Case 538
-                Quote = """A year changes you a lot."""
+                Quote = """Um ano muda você demais."""
                 Exit Select
             Case 539
-                Quote = "If you don't like me. Please don't pretend that you do. Ever."
+                Quote = "Se você não gosta de mim, por favor, não finja que gosta. Nunca."
                 Exit Select
             Case 540
-                Quote = "Once you figure out what respect tastes like, you will always choose it over attention. - pink"
+                Quote = "Quando você descobre o gosto do respeito, você sempre vai escolher isso em vez de atenção. - Pink"
                 Exit Select
             Case 541
-                Quote = "And in the end all I learned was how to be strong alone. - Highway Heart"
+                Quote = "E, no fim, tudo o que aprendi foi a ser forte sozinho. - Highway Heart"
                 Exit Select
             Case 542
-                Quote = "People who show you new music are important."
+                Quote = "Pessoas que te mostram músicas novas são importantes."
                 Exit Select
             Case 543
-                Quote = """What's the most important thing you've done this year?"" ""SURVIVED"""
+                Quote = """Qual foi a coisa mais importante que você fez este ano?"" ""SOBREVIVI"""
                 Exit Select
             Case 544
-                Quote = "I care. I always care. This is my problem."
+                Quote = "Eu me importo. Eu sempre me importo. Esse é o meu problema."
                 Exit Select
             Case 545
-                Quote = "The size of your audience doesn't matter. Keep up the good work."
+                Quote = "O tamanho do seu público não importa. Continue com o bom trabalho."
                 Exit Select
             Case 546
-                Quote = "and sometimes, just sometimes, when people say forever… they mean it."
+                Quote = "e às vezes, só às vezes, quando as pessoas dizem 'pra sempre'… elas falam sério."
                 Exit Select
             Case 547
-                Quote = "I act different around certain people. It's not because I'm fake. It's because I have a different comfort zone around certain people."
+                Quote = "Eu ajo diferente com certas pessoas. Não é porque sou falso. É porque eu tenho uma zona de conforto diferente com algumas pessoas."
                 Exit Select
             Case 548
-                Quote = "Grow through what you go through."
+                Quote = "Cresça com o que você passa."
                 Exit Select
             Case 549
-                Quote = "You have to die a few times before you can really live. - Charles Bukowski"
+                Quote = "Você precisa morrer algumas vezes antes de conseguir viver de verdade. - Charles Bukowski"
                 Exit Select
             Case 550
-                Quote = "Don't let people know too much about you."
+                Quote = "Não deixe as pessoas saberem demais sobre você."
                 Exit Select
             Case 551
-                Quote = "Be so busy improving yourself that you have no time to criticize others."
+                Quote = "Fique tão ocupado melhorando a si mesmo que não tenha tempo para criticar os outros."
                 Exit Select
             Case 552
-                Quote = "So tell me, where shall I go? To the left, where nothing's right? Or to the right, where nothing's left?"
+                Quote = "Então me diga: para onde eu devo ir? Para a esquerda, onde nada é certo? Ou para a direita, onde nada sobra?"
                 Exit Select
             Case 553
-                Quote = "IF YOU WANT TO BE POWERFUL EDUCATE YOURSELF."
+                Quote = "SE VOCÊ QUER SER PODEROSO, EDUQUE-SE."
                 Exit Select
             Case 554
-                Quote = "Know your worth, then add tax."
+                Quote = "Conheça o seu valor… e depois acrescente imposto."
                 Exit Select
             Case 555
-                Quote = "Some people are a human version of migraine."
+                Quote = "Algumas pessoas são a versão humana da enxaqueca."
                 Exit Select
             Case 556
-                Quote = "I am definitely not the same person I was when this year started."
+                Quote = "Eu definitivamente não sou a mesma pessoa que eu era quando este ano começou."
                 Exit Select
             Case 557
-                Quote = "Decide what it is you want. Write that shit down. Make a fucking plan. And… work on it. Every. Single. Day."
+                Quote = "Decida o que você quer. Anote isso. Faça um plano de verdade. E… trabalhe nele. Todo. Santo. Dia."
                 Exit Select
             Case 558
-                Quote = "The older I get, the more I understand that it's okay to live a life others don't understand."
+                Quote = "Quanto mais eu envelheço, mais eu entendo que está tudo bem viver uma vida que os outros não entendem."
                 Exit Select
             Case 559
-                Quote = "Sinners judging sinners for sinning differently."
+                Quote = "Pecadores julgando pecadores por pecarem de um jeito diferente."
                 Exit Select
             Case 560
-                Quote = "If you like someone, set them free. If they comeback, it means nobody liked them. Set them free again."
+                Quote = "Se você gosta de alguém, liberte. Se voltar, é porque ninguém gostou. Libere de novo."
                 Exit Select
             Case 561
-                Quote = "No matter how good your heart is, eventually you have to start treating people the way they treat you…."
+                Quote = "Por melhor que seu coração seja, uma hora você tem que começar a tratar as pessoas do jeito que elas te tratam…"
                 Exit Select
             Case 562
-                Quote = "Life has taught me that you can't control someone's loyalty. No matter how good you are to them, doesn't mean that they will treat you the same. - Trent Shelton"
+                Quote = "A vida me ensinou que você não controla a lealdade de ninguém. Por melhor que você seja com alguém, isso não significa que vão te tratar igual. - Trent Shelton"
                 Exit Select
             Case 563
-                Quote = "I just woke up one day and decided I didn't want to feel like that anymore, so I changed."
+                Quote = "Eu acordei um dia e decidi que não queria mais me sentir assim… então eu mudei."
                 Exit Select
             Case 564
-                Quote = "A queen will always turn pain into power."
+                Quote = "Uma rainha sempre transforma dor em poder."
                 Exit Select
             Case 565
-                Quote = "Less friends, less bullshit. Keep your circle small."
+                Quote = "Menos amigos, menos enrolação. Mantenha seu círculo pequeno."
                 Exit Select
             Case 566
-                Quote = "The nicer you are, the easier you're hurt. So, just be an asshole."
+                Quote = "Quanto mais gentil você é, mais fácil é te ferirem. Então… seja um babaca."
                 Exit Select
             Case 567
-                Quote = "I gave you $10, He gave you $20. You felt that he was better just because he gave you more. But he had $200 dollars, and all I had was $10."
+                Quote = "Eu te dei $10, ele te deu $20. Você achou que ele era melhor só porque deu mais. Mas ele tinha $200, e eu só tinha $10."
                 Exit Select
             Case 568
-                Quote = "My favorite thing is when people remember little things I told them. Like seriously? You actually listened to me thank you."
+                Quote = "Minha coisa favorita é quando as pessoas lembram de pequenas coisas que eu contei. Tipo, sério? Você realmente me ouviu? Obrigado."
                 Exit Select
             Case 569
-                Quote = "Be a good person, but don't waste time to prove it."
+                Quote = "Seja uma boa pessoa, mas não perca tempo tentando provar isso."
                 Exit Select
             Case 570
-                Quote = "I forgive people by forgetting about them."
+                Quote = "Eu perdoo as pessoas esquecendo delas."
                 Exit Select
             Case 571
-                Quote = "Who am I to judge another, when I walk imperfectly."
+                Quote = "Quem sou eu para julgar outra pessoa, se eu caminho imperfeitamente?"
                 Exit Select
             Case 572
-                Quote = "@best friend, I don't tell you everyday how thankful I am for you. But just know, deep down inside, I am truly blessed to have you in my life and to share so many memories with you."
+                Quote = "@melhor amigo(a), eu não te digo todo dia o quanto sou grato por você. Mas saiba: lá no fundo, eu sou muito abençoado por ter você na minha vida e por dividir tantas memórias com você."
                 Exit Select
             Case 573
-                Quote = "You deserve someone who is terrified to lose you. - r.h. Sin"
+                Quote = "Você merece alguém que tenha pavor de te perder. - r.h. Sin"
                 Exit Select
             Case 574
-                Quote = "Life is the most difficult exam. Many people fail because they try to copy others, not realizing that everyone has a different question paper."
+                Quote = "A vida é a prova mais difícil. Muita gente reprova porque tenta copiar os outros, sem perceber que cada um tem uma prova diferente."
                 Exit Select
             Case 575
-                Quote = "What's coming is better than what's gone."
+                Quote = "O que vem é melhor do que o que já foi."
                 Exit Select
             Case 576
-                Quote = "Working hard for something we don't care about is called stress; Working hard for something we love is called passion. -Simon Sinek"
+                Quote = "Trabalhar duro por algo que não nos importa se chama estresse; trabalhar duro por algo que amamos se chama paixão. - Simon Sinek"
                 Exit Select
             Case 577
-                Quote = "In the end, we all just want someone that chooses us.. Over everyone else, under any circumstances."
+                Quote = "No fim, a gente só quer alguém que nos escolha… acima de todo mundo, em qualquer circunstância."
                 Exit Select
             Case 578
-                Quote = "Never be afraid to say what you really feel."
+                Quote = "Nunca tenha medo de dizer o que você realmente sente."
                 Exit Select
             Case 579
-                Quote = "What is the difference between I like you & I love you? Beautifully answered by Buddha: When you like a flower, you just pluck it. But when you love a flower, you water it daily..! One who understands this, understands life..."
+                Quote = "Qual a diferença entre 'gosto de você' e 'eu te amo'? Buda respondeu lindamente: quando você gosta de uma flor, você a arranca. Mas quando você ama uma flor, você a rega todos os dias. Quem entende isso, entende a vida..."
                 Exit Select
             Case 580
-                Quote = "I asked my heart, why I can't sleep at night? Heart replied ""because you slept In the afternoon, don't act like you're in love."""
+                Quote = "Perguntei ao meu coração por que não consigo dormir à noite. Ele respondeu: 'porque você dormiu à tarde — não finja que está apaixonado(a).'"
                 Exit Select
             Case 581
-                Quote = "People keep telling me the right guy will come along. But I think mine got hit by a bus or something."
+                Quote = "As pessoas vivem me dizendo que a pessoa certa vai aparecer. Mas acho que a minha foi atropelada por um ônibus ou algo assim."
                 Exit Select
             Case 582
-                Quote = "A bird sitting on a tree is never afraid of the branch breaking, because her trust is not on the branch but on it's own wings. Always believe in yourself."
+                Quote = "Um pássaro sentado numa árvore nunca tem medo de o galho quebrar, porque a confiança dele não está no galho, e sim nas próprias asas. Acredite sempre em você."
                 Exit Select
             Case 583
-                Quote = "Before you diagnose yourself with depression or low self-esteem, first make sure you are not, in fact, surrounded by assholes. - Sigmund Freud"
+                Quote = "Antes de se diagnosticar com depressão ou baixa autoestima, primeiro confirme se você não está, na verdade, cercado de idiotas. - Sigmund Freud"
                 Exit Select
             Case 584
-                Quote = "I have seen ugly souls masked by pretty faces, so don't tell me beauty is solely physical."
+                Quote = "Eu já vi almas feias escondidas atrás de rostos bonitos; então não me diga que beleza é só física."
                 Exit Select
             Case 585
-                Quote = "No matter how good you are, you can always be replaced."
+                Quote = "Não importa o quão bom você seja, sempre dá para te substituir."
                 Exit Select
             Case 586
-                Quote = "Learn How To: Get fun without drink. Talk without cell phone. Dream without drugs. Smile without selfies. Love without conditions."
+                Quote = "Aprenda a: se divertir sem beber; conversar sem celular; sonhar sem drogas; sorrir sem selfies; amar sem condições."
                 Exit Select
             Case 587
-                Quote = "Soon, when all is well, you're going to look back on this period of your life and be so glad that you never gave up."
+                Quote = "Em breve, quando tudo estiver bem, você vai olhar para trás e ficar muito feliz por nunca ter desistido."
                 Exit Select
             Case 588
-                Quote = "Things left unsaid stay with us forever."
+                Quote = "Coisas que ficam sem ser ditas ficam com a gente para sempre."
                 Exit Select
             Case 589
-                Quote = "You come home, make some tea, sit down in your armchair, and all around there's silence. Everyone decides for themselves whether that's loneliness or freedom."
+                Quote = "Você chega em casa, faz um chá, senta na poltrona e, ao redor, só silêncio. Cada um decide se isso é solidão… ou liberdade."
                 Exit Select
             Case 590
-                Quote = "Grades don't measure intelligence and age doesn't define maturity."
+                Quote = "Notas não medem inteligência e idade não define maturidade."
                 Exit Select
             Case 591
-                Quote = "Sometimes there is no next time, no second chance, no time out. Sometimes it's now or never."
+                Quote = "Às vezes não existe próxima vez, nem segunda chance, nem tempo. Às vezes é agora ou nunca."
                 Exit Select
             Case 592
-                Quote = "The biggest lesson I've learned this year is that no one is really your friend or truly loves you until they've seen every dark shadow in side you.. and stayed."
+                Quote = "A maior lição que aprendi este ano é que ninguém é realmente seu amigo ou te ama de verdade até ver toda a sua escuridão… e ficar."
                 Exit Select
             Case 593
-                Quote = "Educate yourself. When a question about a certain topic pops up, google it. Watch movies and documentaries. When something sparks your interest, read about it. Read read read. Study, learn, stimulate your brain. Don't just rely on the school system, educate that beautiful mind of yours."
+                Quote = "Eduque-se. Quando surgir uma dúvida sobre um tema, pesquise. Assista filmes e documentários. Quando algo te interessar, leia sobre isso. Leia, leia, leia. Estude, aprenda, estimule seu cérebro. Não dependa só da escola: eduque essa mente linda que você tem."
                 Exit Select
             Case 594
-                Quote = "It's a beautiful feeling when someone tells you ""I wish I knew you earlier""."
+                Quote = "Não é grosseria, é só ser real."
                 Exit Select
             Case 595
-                Quote = "Autumn shows us how beautiful it is to let things go."
+                Quote = "O outono mostra como é bonito deixar as coisas irem."
                 Exit Select
             Case 596
-                Quote = "When trust is broken, sorry means nothing."
+                Quote = "Quando a confiança é quebrada, 'desculpa' não significa nada."
                 Exit Select
             Case 597
-                Quote = "You are not too old and it is not too late. - R. M. Rilke"
+                Quote = "Você não está velho demais e não é tarde demais. - R. M. Rilke"
                 Exit Select
             Case 598
-                Quote = "Be a better you, for you."
+                Quote = "Seja uma versão melhor de você… por você."
                 Exit Select
             Case 599
-                Quote = "The art of knowing is knowing what to ignore. - Rumi"
+                Quote = "A arte de saber é saber o que ignorar. - Rumi"
                 Exit Select
             Case 600
-                Quote = "We must take adventures in order to know where we truly belong."
+                Quote = "Precisamos nos aventurar para saber onde realmente pertencemos."
                 Exit Select
             Case 601
-                Quote = "Your heart knows things that your mind can't explain."
+                Quote = "Seu coração sabe coisas que sua mente não consegue explicar."
                 Exit Select
             Case 602
-                Quote = "When was the last time you did something for the first time?"
+                Quote = "Quando foi a última vez que você fez algo pela primeira vez?"
                 Exit Select
             Case 603
-                Quote = "I've learned more from pain than I could've ever learned from pleasure."
+                Quote = "Aprendi mais com a dor do que eu jamais poderia aprender com o prazer."
                 Exit Select
             Case 604
-                Quote = "You can never be happy if you're always afraid to let go of what's comfortable, familiar. Sometimes, those are the things that hurt us."
+                Quote = "Você nunca vai ser feliz se estiver sempre com medo de soltar o que é confortável, familiar. Às vezes, são justamente essas coisas que nos machucam."
                 Exit Select
             Case 605
-                Quote = "Don't educate your children to be rich. Educate them to be happy, so they know the value of things, not the price."
+                Quote = "Não eduque seus filhos para serem ricos. Eduque-os para serem felizes, assim eles saberão o valor das coisas, não o preço."
                 Exit Select
             Case 606
-                Quote = "It's better to look back on life and say: ""I can't believe I did that."" than to look back and say: ""I wish I did that."""
+                Quote = "É melhor olhar para trás e dizer: ""Não acredito que eu fiz isso."" do que olhar para trás e dizer: ""Eu queria ter feito isso."""
                 Exit Select
             Case 607
-                Quote = "I love you take 3 seconds to say, 3 hours to explain, and a lifetime to prove."
+                Quote = "Eu te amo leva 3 segundos para dizer, 3 horas para explicar e uma vida inteira para provar."
                 Exit Select
             Case 608
-                Quote = "Always help someone. You might be the only one that does."
+                Quote = "Sempre ajude alguém. Você pode ser a única pessoa que ajuda."
                 Exit Select
             Case 609
-                Quote = "Seeing someone read a book you love is seeing a book recommend a person."
+                Quote = "Ver alguém lendo um livro que você ama é como ver um livro recomendando uma pessoa."
                 Exit Select
             Case 610
-                Quote = "Never hope for it more than you work for it."
+                Quote = "Nunca deseje mais do que você trabalha para conquistar."
                 Exit Select
             Case 611
-                Quote = "Don’t be afraid to give up the GOOD to go for the GREAT. - John D. Rockefeller"
+                Quote = "Não tenha medo de abrir mão do BOM para buscar o ÓTIMO. - John D. Rockefeller"
                 Exit Select
             Case 612
-                Quote = "I am proud of my heart. It has been stabbed, broken and torn apart yet still beats."
+                Quote = "Tenho orgulho do meu coração. Ele foi apunhalado, quebrado e despedaçado… e ainda assim continua batendo."
                 Exit Select
             Case 613
-                Quote = "You can never cross the ocean unless you have the courage to lose sight of the shore."
+                Quote = "Você nunca atravessa o oceano se não tiver coragem de perder de vista a margem."
                 Exit Select
             Case 614
-                Quote = "Better to have an enemy who slaps you in the face than a friend who stabs you in the back."
+                Quote = "Melhor ter um inimigo que te dá um tapa na cara do que um amigo que te apunhala pelas costas."
                 Exit Select
             Case 615
-                Quote = "COLLECT MOMENTS NOT THINGS."
+                Quote = "COLECIONE MOMENTOS, NÃO COISAS."
                 Exit Select
             Case 616
-                Quote = "Don't let the fear of falling keep you from flying."
+                Quote = "Não deixe o medo de cair te impedir de voar."
                 Exit Select
             Case 617
-                Quote = "Be stubborn about your goals, but flexible about your methods."
+                Quote = "Seja teimoso com seus objetivos, mas flexível com seus métodos."
                 Exit Select
             Case 618
-                Quote = "Your are going to want to give up. Don't."
+                Quote = "Você vai querer desistir. Não desista."
                 Exit Select
             Case 619
-                Quote = "It's just a bad day not a bad life."
+                Quote = "É só um dia ruim, não uma vida ruim."
                 Exit Select
             Case 620
-                Quote = "Please don't expect me to always be good and kind and loving. There are times when I will be cold and thoughtless and hard to understand."
+                Quote = "Por favor, não espere que eu seja sempre bom, gentil e carinhoso. Há momentos em que eu vou ser frio, sem pensar e difícil de entender."
                 Exit Select
             Case 621
-                Quote = "never give up, great things take time."
+                Quote = "Nunca desista. Coisas grandes levam tempo."
                 Exit Select
             Case 622
-                Quote = "Speak your mind even if your voice shakes. - Maggie Kuhn"
+                Quote = "Fale o que pensa, mesmo que sua voz trema. - Maggie Kuhn"
                 Exit Select
             Case 623
-                Quote = "I have decided to be happy, because it is good for my health."
+                Quote = "Decidi ser feliz, porque isso faz bem à minha saúde."
                 Exit Select
             Case 624
-                Quote = "COURAGE is not the absence of fear, but rather the judgement that something else is more important than fear. -Ambrose Redmoon"
+                Quote = "CORAGEM não é ausência de medo, mas o julgamento de que algo é mais importante do que o medo. - Ambrose Redmoon"
                 Exit Select
             Case 625
-                Quote = "A broken heart is what changes people."
+                Quote = "Um coração partido é o que muda as pessoas."
                 Exit Select
             Case 626
-                Quote = "How beautiful a day can be when kindness touches it."
+                Quote = "Como um dia pode ser bonito quando a bondade o toca."
                 Exit Select
             Case 627
-                Quote = "Because of you, I laugh a little harder, cry a little less, and smile a lot more."
+                Quote = "Por sua causa, eu rio um pouco mais alto, choro um pouco menos e sorrio muito mais."
                 Exit Select
             Case 628
-                Quote = "You never know how strong you really are until being strong is the only choice you have."
+                Quote = "Você nunca sabe o quanto é forte até que ser forte seja a única escolha que você tem."
                 Exit Select
             Case 629
-                Quote = "Fuck people who play with other people's feelings"
+                Quote = "Que se danem as pessoas que brincam com os sentimentos dos outros."
                 Exit Select
             Case 630
-                Quote = "Ask yourself if what you're doing today is getting you closer to where you want to be tomorrow."
+                Quote = "Pergunte a si mesmo se o que você está fazendo hoje está te deixando mais perto de onde você quer estar amanhã."
                 Exit Select
             Case 631
-                Quote = "As we grow up, we realize it becomes less important to have more friends and more important to have real ones."
+                Quote = "Quando a gente cresce, percebe que é menos importante ter muitos amigos e mais importante ter amigos de verdade."
                 Exit Select
             Case 632
-                Quote = "I was born to make mistakes, not to fake perfection."
+                Quote = "Eu nasci para cometer erros, não para fingir perfeição."
                 Exit Select
             Case 633
-                Quote = "She turned her can'ts into cans and her dreams into plans."
+                Quote = "Ela transformou seus 'não consigo' em 'eu consigo' e seus sonhos em planos."
                 Exit Select
             Case 634
-                Quote = "Happiness can be found in the darkest times, if one only remembers to turn on the light."
+                Quote = "A felicidade pode ser encontrada nos tempos mais sombrios, se a gente apenas se lembrar de acender a luz."
                 Exit Select
             Case 635
-                Quote = "Don't rush anything, when the time is right, it will happen."
+                Quote = "Não apresse nada. Quando for a hora certa, vai acontecer."
                 Exit Select
             Case 636
-                Quote = "Always be thankful. Life could be worse."
+                Quote = "Seja sempre grato. A vida poderia ser pior."
                 Exit Select
             Case 637
-                Quote = "The cost of not following your heart, is spending the rest of your life wishing you had."
+                Quote = "O custo de não seguir seu coração é passar o resto da vida desejando ter seguido."
                 Exit Select
             Case 638
-                Quote = "What comes easy, won't last. What lasts, won't come easy."
+                Quote = "O que vem fácil não dura. O que dura não vem fácil."
                 Exit Select
             Case 639
-                Quote = "I CAN AND I WILL. Watch me."
+                Quote = "EU POSSO E EU VOU. Me observe."
                 Exit Select
             Case 640
-                Quote = "Never let your fear decide your future."
+                Quote = "Nunca deixe seu medo decidir seu futuro."
                 Exit Select
             Case 641
-                Quote = "Be a voice, not an echo."
+                Quote = "Seja uma voz, não um eco."
                 Exit Select
             Case 642
-                Quote = "Good people go through the most bullshit."
+                Quote = "As pessoas boas são as que passam pelo pior tipo de merda."
                 Exit Select
             Case 643
-                Quote = "Are you really happy or just really comfortable?"
+                Quote = "Você está realmente feliz ou só realmente confortável?"
                 Exit Select
             Case 644
-                Quote = "Do you ever feel like you aren't even friends with some of your friends?"
+                Quote = "Você já sentiu que nem é amigo de alguns dos seus amigos?"
                 Exit Select
             Case 645
-                Quote = "You only fail when you stop trying."
+                Quote = "Você só falha quando para de tentar."
                 Exit Select
             Case 646
-                Quote = "Sometimes someone says something really small and it just fits into this empty place in your heart."
+                Quote = "Às vezes alguém diz uma coisa bem pequena e ela encaixa exatamente naquele espaço vazio do seu coração."
                 Exit Select
             Case 647
-                Quote = "I don't want to have the world's attention. Yours is enough."
+                Quote = "Eu não quero a atenção do mundo. A sua já é suficiente."
                 Exit Select
             Case 648
-                Quote = "I find pieces of you in every song I listen to."
+                Quote = "Eu encontro pedaços de você em cada música que eu escuto."
                 Exit Select
             Case 649
-                Quote = "She believed she could, so she did."
+                Quote = "Ela acreditou que podia, então ela fez."
                 Exit Select
             Case 650
-                Quote = "Some people make your laugh a little louder. Your smile a little brighter. And your life a little better."
+                Quote = "Algumas pessoas fazem sua risada ficar um pouco mais alta, seu sorriso um pouco mais brilhante e sua vida um pouco melhor."
                 Exit Select
             Case 651
-                Quote = "Our small stupid conversations mean more to me than you'll ever know."
+                Quote = "Nossas conversas pequenas e bobas significam mais para mim do que você imagina."
                 Exit Select
             Case 652
-                Quote = "May you always do what you are afraid to do."
+                Quote = "Que você sempre faça aquilo que tem medo de fazer."
                 Exit Select
             Case 653
-                Quote = "To laugh often and much; To win the respect of intelligent people and the affection of children; To earn the appreciation of honest critics and endure the betrayal of false friends; To appreciate beauty, to find the best in others; To leave the world a bit better, whether by a healthy child, a garden patch, or a redeemed social condition; To know even one life has breathed easier because you have lived. This is to have succeeded. - Ralph Waldo Emerson "
+                Quote = "Rir com frequência e muito; conquistar o respeito de pessoas inteligentes e o carinho das crianças; ganhar a apreciação de críticos honestos e suportar a traição de falsos amigos; apreciar a beleza, ver o melhor nos outros; deixar o mundo um pouco melhor, seja por uma criança saudável, um pedaço de jardim ou uma condição social recuperada; saber que pelo menos uma vida respirou mais leve porque você viveu. Isso é ter sucesso. - Ralph Waldo Emerson"
                 Exit Select
             Case 654
-                Quote = "Every day may not be good, but there's something good in every day."
+                Quote = "Nem todo dia é bom, mas há algo de bom em todo dia."
                 Exit Select
             Case 655
-                Quote = "Everything will be okay in the end. If it's not okay, it's not the end. - John Lennon"
+                Quote = "No fim, tudo vai ficar bem. Se ainda não está bem, então ainda não é o fim. - John Lennon"
                 Exit Select
             Case 656
-                Quote = "The windshield to life is big and the rear view mirror is small. Using the rear view mirror once in a while will help you not to engage in another accident, but focusing on it will make you smash into what ever is in front of you."
+                Quote = "O para-brisa da vida é grande e o retrovisor é pequeno. Usar o retrovisor de vez em quando ajuda você a não se envolver em outro acidente, mas ficar focado nele faz você bater no que estiver à sua frente."
                 Exit Select
             Case 657
-                Quote = "Talent is a pursued interest. In other words, anything that you're willing to practice, you can do."
+                Quote = "Talento é um interesse cultivado. Em outras palavras, tudo o que você estiver disposto a praticar, você consegue fazer."
                 Exit Select
             Case 658
-                Quote = "No matter how slow you go, you are still lapping everybody on the couch."
+                Quote = "Não importa o quão devagar você vá: você ainda está ultrapassando todo mundo que ficou no sofá."
                 Exit Select
             Case 659
-                Quote = "Ideas not coupled with action never become bigger than the brain cells they occupied."
+                Quote = "Ideias sem ação nunca ficam maiores do que as células do cérebro que elas ocupam."
                 Exit Select
             Case 660
-                Quote = "To know what you want, to understand why you're doing it, to dedicate every breath in your body to achieve… If you feel you have something to give, if you feel that your particular talent is worth developing, is worth caring for then there's nothing you can't achieve. - Kevin Spacey"
+                Quote = "Saber o que você quer, entender por que está fazendo, dedicar cada fôlego do seu corpo para alcançar… Se você sente que tem algo a oferecer, se sente que seu talento vale a pena ser desenvolvido e cuidado, então não existe nada que você não possa alcançar. - Kevin Spacey"
                 Exit Select
             Case 661
-                Quote = "Listen. I wish I could tell you it gets better. But it doesn't get better. You get better. - Joan Rivers"
+                Quote = "Escuta: eu queria poder dizer que melhora. Mas não melhora. Você é que melhora. - Joan Rivers"
                 Exit Select
             Case 662
-                Quote = "Work until you no longer have to introduce yourself."
+                Quote = "Trabalhe até que você não precise mais se apresentar."
                 Exit Select
             Case 663
-                Quote = "No one's really keeping track of how many times you screw up… So chill the fuck out."
+                Quote = "Ninguém está realmente contando quantas vezes você vacila… então relaxa a porra toda."
                 Exit Select
             Case 664
-                Quote = "No such thing as spare time, no such thing as free time, no such thing as down time. All you got is life time. Go. - Henry Rollins"
+                Quote = "Não existe tempo sobrando, não existe tempo livre, não existe tempo morto. Tudo o que você tem é tempo de vida. Vá. - Henry Rollins"
                 Exit Select
             Case 665
-                Quote = "A habit cannot be tossed out the window; it must be coaxed down the stairs a step at a time. - Mark Twain"
+                Quote = "Um hábito não pode ser jogado pela janela; ele precisa ser convencido a descer as escadas, degrau por degrau. - Mark Twain"
                 Exit Select
             Case 666
-                Quote = "Sometimes you will never know the value of a moment until it becomes a memory. - Dr. Seuss"
+                Quote = "Às vezes você nunca vai saber o valor de um momento até que ele vire uma memória. - Dr. Seuss"
                 Exit Select
             Case 667
-                Quote = "The less you respond to negative people, the more peaceful your life will become."
+                Quote = "Quanto menos você reage a pessoas negativas, mais tranquila sua vida fica."
                 Exit Select
             Case 668
-                Quote = "Just because you don't look like somebody who think is attractive doesn't mean you aren't attractive. Flowers are pretty but so christmas lights and they look nothing like."
+                Quote = "Só porque você não se parece com o que alguém acha atraente, não significa que você não seja atraente. Flores são bonitas, mas luzes de Natal também, e não se parecem em nada."
                 Exit Select
             Case 669
-                Quote = "1.01^365 = 37.8; 0.99^365 = 0.03"
+                Quote = "1,01^365 = 37,8; 0,99^365 = 0,03"
                 Exit Select
             Case 670
-                Quote = "If you let people's perception of you dictate your behavior, you will never grow as a person."
+                Quote = "Se você deixar a percepção das pessoas sobre você ditar seu comportamento, você nunca vai crescer como pessoa."
                 Exit Select
             Case 671
-                Quote = "Fuck motivation. It's a fickle and unreliable little dickfuck and it isn't worth your time. Better to cultivate discipline than to rely on motivation. force yourself to do things. force yourself to get up out of bed and practice. Force yourself to work. Motivation is fleeting and it’s easy to rely on because it requires no concentrated effort to get. Motivation comes to you, and you don’t have to chase after it. Discipline is reliable, motivation is fleeting. The question isn’t how to keep yourself motivated. It’s how to train yourself to work without it."
+                Quote = "Que se dane a motivação. Ela é instável e pouco confiável — e não vale seu tempo. Melhor cultivar disciplina do que depender de motivação. Force-se a fazer as coisas. Force-se a levantar da cama e praticar. Force-se a trabalhar. Motivação é passageira e é fácil se apoiar nela porque não exige esforço concentrado para aparecer. A motivação vem até você; você não precisa correr atrás. Disciplina é confiável; motivação passa. A pergunta não é como se manter motivado. É como treinar para trabalhar mesmo sem motivação."
                 Exit Select
             Case 672
-                Quote = "Forgive other not because they deserve forgiveness, but because you deserve peace."
+                Quote = "Perdoe os outros não porque eles merecem perdão, mas porque você merece paz."
                 Exit Select
             Case 673
-                Quote = "The whole idea of motivation is a trap. Forget motivation. Just do it. Exercise, lose weight, test your blood sugar, or whatever. Do it without motivation. And then, guess what? After you start doing the thing, that's when the motivation comes and makes it easy for you to keep on doing it. - John Maxwell"
+                Quote = "A ideia de motivação é uma armadilha. Esqueça a motivação. Apenas faça. Exercite-se, emagreça, controle sua glicose, ou o que for. Faça sem motivação. E sabe o que acontece? Depois que você começa a fazer, é aí que a motivação aparece e fica mais fácil continuar. - John Maxwell"
                 Exit Select
             Case 674
-                Quote = "It's better to shit your pants than to die of constipation. - My dad on whether or not I should ask out a girl when I was younger."
+                Quote = "É melhor se cagar nas calças do que morrer de prisão de ventre. - Meu pai, sobre eu chamar uma garota pra sair quando eu era mais novo."
                 Exit Select
             Case 675
-                Quote = "They tried to bury us. They didn't know we were seeds. -Mexican Proverb"
+                Quote = "Tentaram nos enterrar. Não sabiam que éramos sementes."
                 Exit Select
             Case 676
-                Quote = "Your focus determines your reality."
+                Quote = "Seu foco determina sua realidade."
                 Exit Select
             Case 677
-                Quote = "The pessimist looks down, and hits his head. The optimist looks up, and loses his footing. The realist looks forward, and adjusts his path accordingly. - King Ezekiel "
+                Quote = "O pessimista olha para baixo e bate a cabeça. O otimista olha para cima e perde o equilíbrio. O realista olha para frente e ajusta o caminho. - Rei Ezequiel"
                 Exit Select
             Case 678
-                Quote = "Success is accepting yourself, enjoying what you do, and loving how you do it."
+                Quote = "Sucesso é aceitar a si mesmo, gostar do que faz e amar a forma como faz."
                 Exit Select
             Case 679
-                Quote = "If you get tired learn to rest, Not to quit.."
+                Quote = "Se você ficar cansado, aprenda a descansar — não a desistir."
                 Exit Select
             Case 680
-                Quote = "Success isn't owned, it's leased. And rent is due every day. - J.J. Watt"
+                Quote = "Sucesso não é propriedade, é aluguel. E o aluguel vence todo dia. - J.J. Watt"
                 Exit Select
             Case 681
-                Quote = "If there's no wind, row. - Latin Proverb"
+                Quote = "A vida é curta. Sorria enquanto ainda tem dentes."
                 Exit Select
             Case 682
-                Quote = "There is a crack in everything. That's how the light gets in. -Leonard Cohen"
+                Quote = "Quando você quer alguma coisa, o universo inteiro conspira para que você realize seu desejo. - Paulo Coelho"
                 Exit Select
             Case 683
-                Quote = "Don't look back. You are not going that way."
+                Quote = "Ser feliz nunca sai de moda."
                 Exit Select
             Case 684
-                Quote = "The trouble with most of us is that we would rather be ruined by praise than saved by criticism. - Norman Vincent Peal"
+                Quote = "A vida tem um jeito engraçado de ensinar lições."
                 Exit Select
             Case 685
-                Quote = "Just because my path is different doesn't mean I'm lost."
+                Quote = "Faça sua vida valer a pena."
                 Exit Select
             Case 686
-                Quote = "You will never influence the world by trying to be like it."
+                Quote = "Onde quer que a vida plante você, floresça com graça."
                 Exit Select
             Case 687
-                Quote = "There is a saying: Yesterday is history, Tomorrow is mystery, But today is a gift. That is why it is called the ""present""."
+                Quote = "Nem todo mundo que se afasta te perde."
                 Exit Select
             Case 688
-                Quote = "The best time to plant a tree is 20 years ago. The second best time is now."
+                Quote = "Não se limite. Muitas pessoas se limitam ao que acham que conseguem. Você pode ir tão longe quanto sua mente permitir. O que você acredita, você consegue. - Mary Kay Ash"
                 Exit Select
             Case 689
-                Quote = "If video games have taught me anything, it's that if you encounter enemies then you're going the right way."
+                Quote = "Às vezes, a pessoa mais forte é a que sorri em silêncio."
                 Exit Select
             Case 690
-                Quote = "Not every place you fit in is where you belong."
+                Quote = "Nunca deixe que o medo de cair te impeça de voar."
                 Exit Select
             Case 691
-                Quote = "No-one really feels self-confident deep down because it's an artificial idea. Really, people aren't that worried about what you're doing or what you're saying, so you can drift around the world relatively anonymously: you must not feel persecuted and examined. Liberate yourself from that idea that people are watching you. - Russell Brand"
+                Quote = "Ninguém se sente realmente autoconfiante lá no fundo, porque isso é uma ideia artificial. Na real, as pessoas não estão tão preocupadas com o que você faz ou diz. Você pode andar pelo mundo quase anonimamente. Não se sinta perseguido e examinado. Liberte-se da ideia de que estão te observando. - Russell Brand"
                 Exit Select
             Case 692
-                Quote = "The world is against me. It wouldn't be fair otherwise."
+                Quote = "Seja uma voz, não um eco."
                 Exit Select
             Case 693
-                Quote = "Give me six hours to chop down a tree and I will spend the first four sharpening the axe. - Abraham Lincoln"
+                Quote = "O que é para ser seu, encontrará você."
                 Exit Select
             Case 694
-                Quote = "It doesn't make sense to hire smart people and tell them what to do; we hire smart people so they can tell us what to do. - Steve Jobs"
+                Quote = "Um dia, tudo vai fazer sentido."
                 Exit Select
             Case 695
-                Quote = "Take the bricks your enemies throw at you and build your castle."
+                Quote = "Acredite no seu potencial."
                 Exit Select
             Case 696
-                Quote = "Realize that sleeping on a futon when you're 30 is not the worst thing. You know what's worse, sleeping in a king bed next to a wife you're not really in love with but for some reason you married, and you got a couple kids, and you got a job you hate. You'll be laying there fantasizing about sleeping on a futon. There's no risk when you go after a dream. There's a tremendous amount to risk to playing it safe. - Bill Burr"
+                Quote = "Cresça no que você atravessa."
                 Exit Select
             Case 697
-                Quote = "If you can dream it, you can achieve it. "
+                Quote = "Você merece o amor que fica."
                 Exit Select
             Case 698
-                Quote = "If it's not impossible, there must be a way to do it."
+                Quote = "Uma coisa de cada vez."
                 Exit Select
             Case 699
-                Quote = "Climb mountains not so the world can see you, but so you can see the world."
+                Quote = "Às vezes, a melhor resposta é o silêncio."
                 Exit Select
             Case 700
-                Quote = "Fear is wisdom in the face of danger. It is nothing to ashamed of."
+                Quote = "Seja gentil com você mesmo."
                 Exit Select
             Case 701
-                Quote = "I've had a lot of worries in my life, most of which never happened. - Mark Twain"
+                Quote = "Você não é difícil de amar. Você só se acostumou com pouco."
                 Exit Select
             Case 702
-                Quote = "AT THE END OF THE DAY I say to myself, 'Did I make a difference?' I hope the answer is always yes. - Lenny Robinson"
+                Quote = "Algumas pessoas se vão para abrir espaço para coisas melhores."
                 Exit Select
             Case 703
-                Quote = "Be willing to walk alone. Many who started with you won't finish with you."
+                Quote = "Aprenda a ser sua própria paz."
                 Exit Select
             Case 704
-                Quote = "The best people possess a feeling for beauty, the courage to take risks, the discipline to tell the truth, the capacity for sacrifice. Ironically, their virtues make them vulnerable; they are often wounded, sometimes destroyed. - Ernest Hemingway"
+                Quote = "Sem pressão, não há crescimento."
                 Exit Select
             Case 705
-                Quote = "Do something today that your future self will thank you for."
+                Quote = "Foque em você. O resto vem."
                 Exit Select
             Case 706
-                Quote = "I still have a long way to go. But I'm already so far from where I used to be. And I'm proud of that."
+                Quote = "Não confunda familiaridade com amor."
                 Exit Select
             Case 707
-                Quote = "Worrying is like praying for something that you don't what to happen. - Robert Downey Jr."
+                Quote = "O que é seu, não passa."
                 Exit Select
             Case 708
-                Quote = "Don't let anyone tell you you're too young to accomplish something. A BABY SHARK IS STILL A FUCKING SHARK."
+                Quote = "Um tubarão bebê ainda é um tubarão."
                 Exit Select
             Case 709
-                Quote = "Your value does not decrease based on someone's inability to see your worth."
+                Quote = "Seu valor não diminui porque alguém não consegue enxergar o seu valor."
                 Exit Select
             Case 710
-                Quote = "The truth is, everyone is goint to hurt you. You just got to find the ones worth suffering for. - Bob Marley"
+                Quote = "A verdade é que todo mundo vai te machucar. Você só precisa achar aqueles por quem vale a pena suportar. - Bob Marley"
                 Exit Select
             Case 711
-                Quote = "Only in the darkness, you are able to see the stars. - Martin Luther King"
+                Quote = "Só na escuridão você consegue ver as estrelas. - Martin Luther King"
                 Exit Select
             Case 712
-                Quote = "Never tell your problems to anyone… 20% don't care and the other 80% are glad you have them. - Lou Holtz"
+                Quote = "Nunca conte seus problemas a ninguém… 20% não ligam e os outros 80% ficam felizes por você tê-los. - Lou Holtz"
                 Exit Select
             Case 713
-                Quote = "Vision without execution is just hallucination. - Henry Ford"
+                Quote = "Visão sem execução é só alucinação. - Henry Ford"
                 Exit Select
             Case 714
-                Quote = "Some people feel the rain. Others just get wet. - Bob Marley"
+                Quote = "Algumas pessoas sentem a chuva. Outras só se molham. - Bob Marley"
                 Exit Select
             Case 715
-                Quote = "Not everything that can be counted counts, and not everything that counts can be counted. - Albert Einstein"
+                Quote = "Nem tudo que pode ser contado conta, e nem tudo que conta pode ser contado. - Albert Einstein"
                 Exit Select
             Case 716
-                Quote = "A superior man is modest in his speech, but exceeds in his actions. - Confucius"
+                Quote = "Um homem superior é modesto na fala, mas excede nas ações. - Confúcio"
                 Exit Select
             Case 717
-                Quote = "What you're thinking is what you're becoming. - Muhammad Ali"
+                Quote = "O que você pensa é o que você se torna. - Muhammad Ali"
                 Exit Select
             Case 718
-                Quote = "Only I can change my life. No one can do it for me. - Carol Burnett"
+                Quote = "Só eu posso mudar minha vida. Ninguém pode fazer isso por mim. - Carol Burnett"
                 Exit Select
             Case 719
-                Quote = "Men for the sake of getting a living forget to live. - Margaret Fuller"
+                Quote = "Os homens, para ganhar a vida, esquecem de viver. - Margaret Fuller"
                 Exit Select
             Case 720
-                Quote = "Education is the most powerful weapon which you can use to change the world.- Nelson Mandela"
+                Quote = "Educação é a arma mais poderosa que você pode usar para mudar o mundo. - Nelson Mandela"
                 Exit Select
             Case 721
-                Quote = "Nothing is impossible, the word itself says 'I'm possible'! - Audrey Hepburn"
+                Quote = "Nada é impossível. A própria palavra diz: ""sou possível""! - Audrey Hepburn"
                 Exit Select
             Case 722
-                Quote = "Do not take life too seriously. You will never get out of it alive. -Elbert Hubbard"
+                Quote = "Não leve a vida tão a sério. Você não vai sair vivo dela. - Elbert Hubbard"
                 Exit Select
             Case 723
-                Quote = "Quality is not an act, it is a habit. - Aristotle"
+                Quote = "Qualidade não é um ato, é um hábito. - Aristóteles"
                 Exit Select
             Case 724
-                Quote = "Our greatest weakness lies in giving up. The most certain way to succeed is always to try just one more time. - Thomas A. Edison"
+                Quote = "Nossa maior fraqueza está em desistir. O jeito mais certo de vencer é tentar só mais uma vez. - Thomas A. Edison"
                 Exit Select
             Case 725
-                Quote = "It always seems impossible until its done. - Nelson Mandela"
+                Quote = "Sempre parece impossível até ser feito. - Nelson Mandela"
                 Exit Select
             Case 726
-                Quote = "Accept the challenges so that you can feel the exhilaration of victory. - George S. Patton"
+                Quote = "Aceite os desafios para sentir a emoção da vitória. - George S. Patton"
                 Exit Select
             Case 727
-                Quote = "Setting goals is the first step in turning the invisible into the visible. - Tony Robbins"
+                Quote = "Definir metas é o primeiro passo para transformar o invisível em visível. - Tony Robbins"
                 Exit Select
             Case 728
-                Quote = "Failure will never overtake me if my determination to succeed is strong enough. - Og Mandino"
+                Quote = "O fracasso nunca vai me alcançar se a minha determinação de vencer for forte o bastante. - Og Mandino"
                 Exit Select
             Case 729
-                Quote = "A creative man is motivated by the desire to achieve, not by the desire to beat others. - Ayn Rand"
+                Quote = "Um homem criativo é motivado pelo desejo de realizar, não pelo desejo de superar os outros. - Ayn Rand"
                 Exit Select
             Case 730
-                Quote = "Perseverance is not a long race; it is many short races one after the other. - Walter Elliot"
+                Quote = "Persistência não é uma corrida longa; são várias corridas curtas, uma depois da outra. - Walter Elliot"
                 Exit Select
             Case 731
-                Quote = "Don't watch the clock; do what it does. Keep going. -Sam Levenson"
+                Quote = "Não fique olhando o relógio; faça o que ele faz. Continue. - Sam Levenson"
                 Exit Select
             Case 732
-                Quote = "You are never too old to set another goal or to dream a new dream."
+                Quote = "Você nunca é velho demais para definir outra meta ou sonhar um novo sonho."
                 Exit Select
             Case 733
-                Quote = "A good plan violently executed now is better than a perfect plan executed next week. - George S. Patton"
+                Quote = "Um bom plano executado com força agora é melhor do que um plano perfeito executado semana que vem. - George S. Patton"
                 Exit Select
             Case 734
-                Quote = "We aim above the mark to hit the mark. - Ralph Waldo Emerson"
+                Quote = "Miramos acima do alvo para acertar o alvo. - Ralph Waldo Emerson"
                 Exit Select
             Case 735
-                Quote = "Thing s do not happen. Things are made to happen. - John F. Kennedy"
+                Quote = "As coisas não acontecem. As coisas são feitas acontecer. - John F. Kennedy"
                 Exit Select
             Case 736
-                Quote = "The ultimate aim of the ego is not to see something, but to be something. - Muhammad Iqbal"
+                Quote = "O objetivo final do ego não é ver algo, mas ser algo. - Muhammad Iqbal"
                 Exit Select
             Case 737
-                Quote = "Do something wonderful, people may imitate it. - Albert Schweitzer"
+                Quote = "Faça algo maravilhoso; as pessoas podem imitar. - Albert Schweitzer"
                 Exit Select
             Case 738
-                Quote = "Deserve your dream. - Octavio Paz"
+                Quote = "Mereça o seu sonho. - Octavio Paz"
                 Exit Select
             Case 739
-                Quote = "When one must, one can. - Charlotte Whitton"
+                Quote = "Quando é preciso, é possível. - Charlotte Whitton"
                 Exit Select
             Case 740
-                Quote = "You have to make it happen. - Denis Diderot"
+                Quote = "Você tem que fazer acontecer. - Denis Diderot"
                 Exit Select
             Case 741
-                Quote = "How bad do you want it?"
+                Quote = "O quanto você quer isso?"
                 Exit Select
             Case 742
-                Quote = "Many are called but few get up. - Oliver Herford"
+                Quote = "Muitos são chamados, mas poucos se levantam. - Oliver Herford"
                 Exit Select
             Case 743
-                Quote = "Who seeks shall find. - Sophocles"
+                Quote = "Quem busca, encontra. - Sófocles"
                 Exit Select
             Case 744
-                Quote = "There is nothing deep down inside us except what we have put there ourselves. - Richard Rorty"
+                Quote = "Não há nada lá no fundo dentro de nós além do que nós mesmos colocamos ali. - Richard Rorty"
                 Exit Select
             Case 745
-                Quote = "Losers quit when they're tired. Winners quit when they've won."
+                Quote = "Perdedores desistem quando estão cansados. Vencedores desistem quando venceram."
                 Exit Select
             Case 746
-                Quote = "Mistakes are proof that you are trying."
+                Quote = "Erros são prova de que você está tentando."
                 Exit Select
             Case 747
-                Quote = "You have to fight some of the bad days to earn some of the best days of your life."
+                Quote = "Um dia você vai agradecer por não ter desistido."
                 Exit Select
             Case 748
-                Quote = "If you can't stop thinking about it, don't stop working for it."
+                Quote = "Não deixe a opinião de alguém virar a sua verdade."
                 Exit Select
             Case 749
-                Quote = "Practice like you've never won. Perform like you've never lost."
+                Quote = "Você está mais perto do que pensa."
                 Exit Select
             Case 750
-                Quote = "Nothing changes if nothing changes."
+                Quote = "Seja constante."
                 Exit Select
             Case 751
-                Quote = "Only the weak give up. No one said it was fucking easy."
+                Quote = "Não espere a motivação. Construa disciplina."
                 Exit Select
             Case 752
-                Quote = "Every accomplishment STARTS with the Decision to TRY."
+                Quote = "Faça o que precisa ser feito."
                 Exit Select
             Case 753
-                Quote = "Your future is created by what you do today not tomorrow."
+                Quote = "Foco cria resultado."
                 Exit Select
             Case 754
-                Quote = "Sometimes, it takes a good fall to really know where you stand."
+                Quote = "Comece antes de estar pronto."
                 Exit Select
             Case 755
-                Quote = "I do it because I can. I can because I want to. I want to because you said I couldn't."
+                Quote = "O que você repete vira você."
                 Exit Select
             Case 756
-                Quote = "Being the richest man in the cemetery doesn't matter to me. Going to bed at night saying we've done something wonderful, that's what matters to me. - Steve Jobs"
+                Quote = "Seja o tipo de pessoa que você admira."
                 Exit Select
             Case 757
-                Quote = "When you feel like quitting, think about why you started."
+                Quote = "Resultados não mentem."
                 Exit Select
             Case 758
-                Quote = "A little progress each day adds up to big results."
+                Quote = "Paciência também é ação."
                 Exit Select
             Case 759
-                Quote = "Don't stop when you are tired. STOP when you are DONE!"
+                Quote = "O melhor momento é agora."
                 Exit Select
             Case 760
-                Quote = "Every single person on the planet has a story. Don't judge people before you truly know them. The truth might surprise you."
+                Quote = "Consistência vence."
                 Exit Select
             Case 761
-                Quote = "Don't call it a dream. Call it a plan."
+                Quote = "Você consegue mais do que imagina."
                 Exit Select
             Case 762
-                Quote = "It is during our failures that we discover our true desire for success. - Kevin Ngo"
+                Quote = "Não pare no meio do caminho."
                 Exit Select
             Case 763
-                Quote = "Your life is your message to the world. Make sure its inspiring."
+                Quote = "Todo dia é treino."
                 Exit Select
             Case 764
-                Quote = "When you're about to give up, remember those who said you're not good enough."
+                Quote = "Você não precisa de sorte; precisa de processo."
                 Exit Select
             Case 765
-                Quote = "Life is tough, my darling, but so are you. - Stephanie Bennett Henry"
+                Quote = "Seu futuro agradece seu esforço."
                 Exit Select
             Case 766
-                Quote = "YESTERDAY YOU SAID TOMORROW."
+                Quote = "É melhor ser tentado do que se arrepender."
                 Exit Select
             Case 767
-                Quote = "Difficult roads often lead to beautiful destinations."
+                Quote = "Pare de adiar sua vida."
                 Exit Select
             Case 768
-                Quote = "Don't tell me the sky's the limit when there are footprints on the moon."
+                Quote = "Disciplina é autocuidado."
                 Exit Select
             Case 769
-                Quote = "Prove them wrong."
+                Quote = "A cada dia, um pouco melhor."
                 Exit Select
             Case 770
-                Quote = "We become what we think about. - Earl Nightingale"
+                Quote = "O caminho se abre andando."
                 Exit Select
             Case 771
-                Quote = "A lot of problems in the world would disappear if we talk to each other instead of about each other."
+                Quote = "Tudo começa com uma decisão."
                 Exit Select
             Case 772
-                Quote = "Don't tell people your dreams. Show them!"
+                Quote = "Trabalhe em silêncio."
                 Exit Select
             Case 773
-                Quote = "Never stop doing little things for others. Sometimes, those little things occupy the biggest part of their heart."
+                Quote = "Escolhas pequenas, resultados grandes."
                 Exit Select
             Case 774
-                Quote = "Be who you are and say what you feel, because those who mind don't matter and those who matter don't mind. - Dr. Seuss"
+                Quote = "O progresso é a prova."
                 Exit Select
             Case 775
-                Quote = "I can. I will. End of story."
+                Quote = "Eu vou. Fim de papo."
                 Exit Select
             Case 776
-                Quote = "Put your heart, mind, and soul into even your smallest acts. This is the secret of success. - Swami Sivananda"
+                Quote = "Coloque coração, mente e alma até nos menores atos. Esse é o segredo do sucesso. - Swami Sivananda"
                 Exit Select
             Case 777
-                Quote = "Good, better, best. Never let it rest. 'Til your good is better and your better is best. -St. Jerome"
+                Quote = "Bom, melhor, o melhor. Nunca se contente. Até o bom virar melhor e o melhor virar o melhor de verdade. - São Jerônimo"
                 Exit Select
             Case 778
-                Quote = "Why cheat? If you're not happy just leave!"
+                Quote = "Pra que trair? Se não está feliz, vá embora!"
                 Exit Select
             Case 779
-                Quote = "Some walks you have to take alone."
+                Quote = "Algumas caminhadas você tem que fazer sozinho."
                 Exit Select
             Case 780
-                Quote = "Not everyone you lose is a loss."
+                Quote = "Nem todo mundo que você perde é uma perda."
                 Exit Select
             Case 781
-                Quote = "If you lose someone, but find yourself, you won."
+                Quote = "Se você perdeu alguém, mas se encontrou, você ganhou."
                 Exit Select
             Case 782
-                Quote = "People ask me why is it so hard to trust people. I ask why is it so hard to keep a promise."
+                Quote = "As pessoas me perguntam por que é tão difícil confiar. Eu pergunto por que é tão difícil cumprir uma promessa."
                 Exit Select
             Case 783
-                Quote = "Having a soulmate isn't always about love, you can also find one in a friend."
+                Quote = "Ter uma alma gêmea nem sempre é sobre amor; você também pode encontrar uma em um amigo."
                 Exit Select
             Case 784
-                Quote = "There are all these moments you think you won't survive. And then you survive. - David Levithan"
+                Quote = "Existem momentos que você acha que não vai sobreviver. E então você sobrevive. - David Levithan"
                 Exit Select
             Case 785
-                Quote = "Judge me by the people I avoid."
+                Quote = "Me julgue pelas pessoas que eu evito."
                 Exit Select
             Case 786
-                Quote = "When your past calls… Don't answer. It has nothing new to say."
+                Quote = "Quando o seu passado ligar… não atenda. Ele não tem nada novo para dizer."
                 Exit Select
             Case 787
-                Quote = "Not everyone is meant to be in your future.  Some people are just passing through to teach you lessons in life."
+                Quote = "Nem todo mundo foi feito para o seu futuro. Algumas pessoas só passam para te ensinar lições na vida."
                 Exit Select
             Case 788
-                Quote = "If my eyes could show my soul, everyone would cry when they saw me smile. - Kurt Cobain"
+                Quote = "Se meus olhos mostrassem minha alma, todo mundo choraria ao me ver sorrir. - Kurt Cobain"
                 Exit Select
             Case 789
-                Quote = "If you still speak about it, you still care about it."
+                Quote = "Se você ainda fala disso, você ainda se importa com isso."
                 Exit Select
             Case 790
-                Quote = "And they lived happily ever after. Separately."
+                Quote = "E eles viveram felizes para sempre. Separadamente."
                 Exit Select
             Case 791
-                Quote = "I distance myself from people for a reason."
+                Quote = "Eu me afasto das pessoas por um motivo."
                 Exit Select
             Case 792
-                Quote = "You can't open up the story of my life and just go to page 738 and think you know me."
+                Quote = "Você não pode abrir a história da minha vida, pular para a página 738 e achar que me conhece."
                 Exit Select
             Case 793
-                Quote = "Some people don't change. They just find new ways to lie."
+                Quote = "Algumas pessoas não mudam. Só acham novas maneiras de mentir."
                 Exit Select
             Case 794
-                Quote = "The deepest pain I ever felt was denying my own feelings to make everyone else comfortable. - Nicole Lyons"
+                Quote = "A dor mais profunda que já senti foi negar meus próprios sentimentos para deixar todo mundo confortável. - Nicole Lyons"
                 Exit Select
             Case 795
-                Quote = "If you have the courage to make it through a lonely night with nothing but your self destructive thoughts to keep you company, darling, you have the courage to make it through anything."
+                Quote = "Se você tem coragem de atravessar uma noite solitária com nada além dos seus pensamentos autodestrutivos te fazendo companhia, querido(a), você tem coragem de atravessar qualquer coisa."
                 Exit Select
             Case 796
-                Quote = "Always remember that behind every strong and independent woman, there are days when she was alone and helpless. There are lessons she has learnt from life and there are stories of battles and struggles which she has fought alone. Beneath the shield of confidence and strength there is a plethora of sadness and pain which she has endured. - Aarti Khurana"
+                Quote = "Lembre-se sempre: por trás de toda mulher forte e independente, existem dias em que ela esteve sozinha e sem amparo. Existem lições que a vida ensinou e histórias de batalhas e lutas que ela enfrentou sozinha. Sob o escudo de confiança e força, existe um mar de tristeza e dor que ela suportou. - Aarti Khurana"
                 Exit Select
             Case 797
-                Quote = "I'm not upset that you lied to me, I'm upset that from now on I can't believe you. - Friedrich Nietzsche."
+                Quote = "Eu não estou chateado(a) por você ter mentido; estou chateado(a) porque, a partir de agora, não posso mais acreditar em você. - Friedrich Nietzsche"
                 Exit Select
             Case 798
-                Quote = "I was told I was dangerous… I asked why? They said ""Because you don't need anyone."" That's when I smiled."
+                Quote = "Disseram que eu era perigoso(a)… perguntei por quê. Disseram: ""Porque você não precisa de ninguém."" Foi aí que eu sorri."
                 Exit Select
             Case 799
-                Quote = "Softness is not weakness. It takes courage to stay delicate in a world this cruel. - Beau Taplin."
+                Quote = "Delicadeza não é fraqueza. É preciso coragem para continuar sensível em um mundo tão cruel. - Beau Taplin."
                 Exit Select
             Case 800
-                Quote = "Distance doesn't separate people.. Silence does.."
+                Quote = "A distância não separa as pessoas… o silêncio separa…"
                 Exit Select
             Case 801
-                Quote = "Damaged people are dangerous. They know how to make hell feel like home."
+                Quote = "Pessoas feridas são perigosas. Elas sabem como fazer o inferno parecer lar."
                 Exit Select
             Case 802
-                Quote = "I'm not afraid of werewolves or vampires or haunted hotels, I'm afraid of what real human beings do to other real human beings. - Walter Jon Williams"
+                Quote = "Eu não tenho medo de lobisomens, vampiros ou hotéis mal-assombrados. Eu tenho medo do que seres humanos reais fazem com outros seres humanos reais. - Walter Jon Williams"
                 Exit Select
             Case 803
-                Quote = "3 things to keep private. 1. Love life. 2. Income. 3. Next move."
+                Quote = "3 coisas para manter em segredo: 1) Vida amorosa. 2) Renda. 3) Próximo passo."
                 Exit Select
             Case 804
-                Quote = "I'm close to very vew people, but those few people mean everything to me."
+                Quote = "Eu sou próximo de pouquíssimas pessoas, mas essas poucas significam tudo para mim."
                 Exit Select
             Case 805
-                Quote = "The first step of change is to become aware of your own bullshit."
+                Quote = "O primeiro passo da mudança é perceber a sua própria merda."
                 Exit Select
             Case 806
-                Quote = "If you see something beautiful in someone, speak it. - Ruthie Lindsey"
+                Quote = "Se você vê algo bonito em alguém, diga. - Ruthie Lindsey"
                 Exit Select
             Case 807
-                Quote = "You're always one decision away from a totally different life."
+                Quote = "Você está sempre a uma decisão de distância de uma vida totalmente diferente."
                 Exit Select
             Case 808
-                Quote = "If it's destroying you, then it isn't love, my dear."
+                Quote = "Se está te destruindo, então não é amor, meu bem."
                 Exit Select
             Case 809
-                Quote = "The most beautiful people you will ever meet aren't always the ones who catch your eye first. No, the most beautiful people are the ones that can never be figured out. The ones you could talk with for hours and still have a millions things to ask. The people who have minds so lovely and special, you can't help but fall in love with them..."
+                Quote = "As pessoas mais bonitas que você vai conhecer nem sempre são as que chamam atenção primeiro. As mais bonitas são as que não dá para decifrar. As que você conversaria por horas e ainda teria um milhão de perguntas. Pessoas com mentes tão lindas e especiais que você não consegue evitar se apaixonar…"
                 Exit Select
             Case 810
-                Quote = "It's all about the first person you wanna tell good news to."
+                Quote = "Tudo se resume à primeira pessoa para quem você quer contar uma boa notícia."
                 Exit Select
             Case 811
-                Quote = "I have a special skill of feeling too much when I shouldn't, and feeling nothing when I should."
+                Quote = "Eu tenho uma habilidade especial de sentir demais quando não devia, e não sentir nada quando eu devia."
                 Exit Select
             Case 812
-                Quote = "Things end. People change. And you know what? Life goes on. - Elizabeth Scott"
+                Quote = "As coisas acabam. As pessoas mudam. E sabe de uma coisa? A vida segue. - Elizabeth Scott"
                 Exit Select
             Case 813
-                Quote = "If I'm wrong, educate me. Don't belittle me."
+                Quote = "Se eu estiver errado, me ensine. Não me diminua."
                 Exit Select
             Case 814
-                Quote = "The older I get, the more I appreciate being home doing absolutely nothing."
+                Quote = "Quanto mais eu envelheço, mais eu valorizo ficar em casa sem fazer absolutamente nada."
                 Exit Select
             Case 815
-                Quote = "The person you will be in 5 years is based on the books you read and the people you surround yourself with today."
+                Quote = "A pessoa que você será em 5 anos depende dos livros que você lê e das pessoas de que você se cerca hoje."
                 Exit Select
             Case 816
-                Quote = "The things you hide in your heart… eats you alive…"
+                Quote = "As coisas que você esconde no coração… te corroem por dentro…"
                 Exit Select
             Case 817
-                Quote = "Just because I'mj silent doesn't mean I agree with you. I'm just being polite. That, or I'm actually too stunned by your stupidity to even respond."
+                Quote = "Só porque eu fico em silêncio não quer dizer que eu concordo com você. Eu só estou sendo educado. Ou então estou tão chocado com a sua estupidez que nem consigo responder."
                 Exit Select
             Case 818
-                Quote = "I've never met a strong person with an easy past."
+                Quote = "Eu nunca conheci uma pessoa forte com um passado fácil."
                 Exit Select
             Case 819
-                Quote = "A heart that always understands also gets tired."
+                Quote = "Um coração que sempre entende também se cansa."
                 Exit Select
             Case 820
-                Quote = "You will search for me in another person. I promise."
+                Quote = "Você vai me procurar em outra pessoa. Eu prometo."
                 Exit Select
             Case 821
-                Quote = "Never forget the people who take time out of their day to check up on you."
+                Quote = "Nunca se esqueça das pessoas que tiram um tempo do dia delas para saber como você está."
                 Exit Select
             Case 822
-                Quote = "Shit happens. Every day. To everyone. The difference is in how people deal with it."
+                Quote = "Acontece coisa ruim. Todo dia. Com todo mundo. A diferença está em como as pessoas lidam com isso."
                 Exit Select
             Case 823
-                Quote = "She's stuck between who she is, who she wants to be, and who she should be."
+                Quote = "Ela está presa entre quem ela é, quem ela quer ser e quem ela deveria ser."
                 Exit Select
             Case 824
-                Quote = "The cure for anything is salt water: sweat, tears or the sea. - Isak Dinesen"
+                Quote = "A cura para qualquer coisa é água salgada: suor, lágrimas ou o mar. - Isak Dinesen"
                 Exit Select
             Case 825
-                Quote = "Sleep doesn't help if it's your soul that's tired."
+                Quote = "Eu sei que você não precisa de mim, mas eu preciso de você."
                 Exit Select
             Case 826
-                Quote = "We ignored truths for temporary happiness."
+                Quote = "O amor não é algo que você encontra. O amor é algo que te encontra."
                 Exit Select
             Case 827
-                Quote = "I have seen beauty in people who were called ugly and I've seen the devil in the most angelic faces. - Conny Cernik"
+                Quote = "Eu tenho vontade de ser feliz."
                 Exit Select
             Case 828
-                Quote = "If it's still in your mind, it is worth taking the risk. - Paulo Coelho, The Alchemist"
+                Quote = "Se você não correr atrás do que quer, nunca vai ter."
                 Exit Select
             Case 829
-                Quote = "I don't regret the things I did wrong. I regret the good things I did for the wrong people."
+                Quote = "Você não pode voltar e mudar o começo, mas pode começar onde está e mudar o final."
                 Exit Select
             Case 830
-                Quote = "People aren't ignoring you. They are busy with their lives. And the way to stop feeling ignored is to get busy with yours."
+                Quote = "Pare de se preocupar com o que pode dar errado e comece a pensar no que pode dar certo."
                 Exit Select
             Case 831
-                Quote = "Kill the part of you that believes it can't survive without someone else. - Sade Andria Zabala"
+                Quote = "A vida é sobre criar a si mesmo."
                 Exit Select
             Case 832
-                Quote = "oh sorry, I forgot. I only exist when you need something."
+                Quote = "Não perca tempo com explicações. As pessoas só entendem o que querem entender."
                 Exit Select
             Case 833
-                Quote = "When I got enough confidence, the stage was gone. When I was sure of losing, I won. When I needed people the most, they left me. When I learnt to dry my tears, I found a shoulder to cry on. And when I mastered the art of hating, somebody started loving me. - William Shakespeare"
+                Quote = "Não espere. A hora nunca vai ser perfeita."
                 Exit Select
             Case 834
-                Quote = "People always choose the wrong person first, and then when the right person arrives, they just stop trusting people."
+                Quote = "Às vezes, você precisa esquecer o que sente e lembrar do que merece."
                 Exit Select
             Case 835
-                Quote = "Someday, all the love you've given away, will find its way back to you, and it will finally stay. - Drewniverses"
+                Quote = "Seja uma prioridade para você."
                 Exit Select
             Case 836
-                Quote = "Life is too short to be normal. Stay weird."
+                Quote = "O que é para você, não te deixa."
                 Exit Select
             Case 837
-                Quote = "No one is going to stand up at your funeral and say ""She had a really expensive couch And great shoes."" Don't make life about stuff."
+                Quote = "Paz é poder respirar sem culpa."
                 Exit Select
             Case 838
-                Quote = "In life, what you really want; will never come easy."
+                Quote = "Nem todo mundo vai entender seu caminho — e tudo bem."
                 Exit Select
             Case 839
-                Quote = "When I was a kid, I wanted to be older… This shit was not what I expected."
+                Quote = "Fique perto de quem soma."
                 Exit Select
             Case 840
-                Quote = "If I won the award for laziness, I would send somebody to pick it up for me."
+                Quote = "Seu futuro depende do que você faz hoje."
                 Exit Select
             Case 841
-                Quote = "Some people are like clouds. When they go away, it's a brighter day."
+                Quote = "Escolha a si mesmo todos os dias."
                 Exit Select
             Case 842
-                Quote = "When nothing is going right, go left."
+                Quote = "Não se apaixone por potencial; apaixone-se por atitudes."
                 Exit Select
             Case 843
-                Quote = "A best friend is like a four leaf clover, hard to find, lucky to have."
+                Quote = "Um dia, você vai olhar para trás e ver o quanto foi forte."
                 Exit Select
             Case 844
-                Quote = "Maybe if we tell people the brain is an app, they'll start using it."
+                Quote = "A gratidão muda o que você tem em suficiente."
                 Exit Select
             Case 845
-                Quote = "When you wake up at 6 in the morning, you close your eyes for 5 minutes and it's already 6:45. When you're at work and it's 2:30, you close your eyes for 5 minutes and it's 2:31."
+                Quote = "Você não precisa provar nada para ninguém."
                 Exit Select
             Case 846
-                Quote = "If people are talking behind your back, be happy that you are the one in front."
+                Quote = "Seja o motivo do seu orgulho."
                 Exit Select
             Case 847
-                Quote = "Life is not about how you survive the storm, it's about how you dance in the rain."
+                Quote = "Nem todo mundo merece acesso a você."
                 Exit Select
             Case 848
-                Quote = "In the morning you beg to sleep more, in the afternoon you are dying to sleep, and at night you refuse to sleep."
+                Quote = "Não se diminua para caber no mundo de alguém."
                 Exit Select
             Case 849
-                Quote = "Doing nothing is hard, you never know when you're done."
+                Quote = "Se não for paz, não é seu."
                 Exit Select
             Case 850
-                Quote = "I always try to cheer myself up by singing when I get sad. Most of the time, it turns out that my voice is worse than my problems."
+                Quote = "A vida é dura, meu bem, mas você também é."
                 Exit Select
             Case 851
-                Quote = "God please give me patience, if you give me strength I will just punch them in the face."
+                Quote = "Deus, por favor, me dê paciência; se me der força, eu vou acabar dando um soco na cara deles."
                 Exit Select
             Case 852
-                Quote = "Life isn't measured by the number of breaths you take, but by the number of moments that take your breath away."
+                Quote = "A vida não é medida pelo número de respirações que você dá, mas pelos momentos que tiram o seu fôlego."
                 Exit Select
             Case 853
-                Quote = "When my boss asked me who is the stupid one, me or him? I told him everyone knows he doesn't hire stupid people."
+                Quote = "Quando meu chefe perguntou quem é o burro, eu ou ele, eu disse: todo mundo sabe que ele não contrata gente burra."
                 Exit Select
             Case 854
-                Quote = "Everybody wants to go to heaven; but nobody wants to die."
+                Quote = "Todo mundo quer ir para o céu; mas ninguém quer morrer."
                 Exit Select
             Case 855
-                Quote = "Some people walk into our lives and leave footprints on our hearts. Others walk into our lives and we want to leave footprints on their face!"
+                Quote = "Algumas pessoas entram na nossa vida e deixam pegadas no nosso coração. Outras entram e dá vontade de deixar pegadas na cara delas!"
                 Exit Select
             Case 856
-                Quote = "Who says nothing is impossible? I've been doing nothing for years."
+                Quote = "Quem disse que nada é impossível? Eu não faço nada há anos."
                 Exit Select
             Case 857
-                Quote = "They say that love is more important than money, but have you ever tried to pay your bills with a hug?"
+                Quote = "Dizem que amor é mais importante que dinheiro… mas você já tentou pagar as contas com um abraço?"
                 Exit Select
             Case 858
-                Quote = "The road to success is always under construction. - Lily Tomlin"
+                Quote = "A estrada para o sucesso está sempre em obras. - Lily Tomlin"
                 Exit Select
             Case 859
-                Quote = "A good speech should be like a woman's skirt: long enough to cover the subject and short enough to create interest. Winston Churchill"
+                Quote = "Um bom discurso deve ser como a saia de uma mulher: longo o bastante para cobrir o assunto e curto o bastante para criar interesse. - Winston Churchill"
                 Exit Select
             Case 860
-                Quote = "Never take life seriously. Nobody gets out alive anyway."
+                Quote = "Nunca leve a vida tão a sério. Ninguém sai vivo dela mesmo."
                 Exit Select
             Case 861
-                Quote = "Smile today, tomorrow could be worse. "
+                Quote = "Sorria hoje… amanhã pode ser pior."
                 Exit Select
             Case 862
-                Quote = "The ideal man doesn't smoke, doesn't drink, doesn't do drugs, doesn't swear, doesn't get angry, doesn't exist."
+                Quote = "O homem ideal não fuma, não bebe, não usa drogas, não xinga, não se irrita… e não existe."
                 Exit Select
             Case 863
-                Quote = "Relationships these days start by pressing LIKE on her photo."
+                Quote = "Relacionamentos hoje em dia começam apertando LIKE na foto dela."
                 Exit Select
             Case 864
-                Quote = "Sometimes when I close my eyes, I can't see."
+                Quote = "Às vezes, quando eu fecho os olhos, eu não consigo ver."
                 Exit Select
             Case 865
-                Quote = "Don't cry because it's over, smile because it happened. - Dr. Seuss"
+                Quote = "Não chore porque acabou; sorria porque aconteceu. - Dr. Seuss"
                 Exit Select
             Case 866
-                Quote = "You know you're in love when you can't fall asleep because reality is finally better than your dreams. - Dr. Seuss"
+                Quote = "Você sabe que está apaixonado quando não consegue dormir porque a realidade finalmente é melhor do que seus sonhos. - Dr. Seuss"
                 Exit Select
             Case 867
-                Quote = "To be yourself in a world that is constantly trying to make you something else is the greatest accomplishment. - Ralph Waldo Emerson"
+                Quote = "Ser você mesmo em um mundo que tenta o tempo todo te transformar em outra coisa é a maior conquista. - Ralph Waldo Emerson"
                 Exit Select
             Case 868
-                Quote = "Whenever you find yourself on the side of the majority, it is time to pause and reflect. -Mark Twain"
+                Quote = "Sempre que você se encontrar do lado da maioria, é hora de parar e refletir. - Mark Twain"
                 Exit Select
             Case 869
-                Quote = "When you're happy you enjoy the music. When you're sad you understand the lyrics."
+                Quote = "Quando você está feliz, você curte a música. Quando está triste, você entende a letra."
                 Exit Select
             Case 870
-                Quote = "I never make the same mistake twice. I make it like five or six times, you know, just to be sure."
+                Quote = "Eu nunca cometo o mesmo erro duas vezes. Eu cometo umas cinco ou seis, só para ter certeza."
                 Exit Select
             Case 871
-                Quote = "Only dead fish go with the flow."
+                Quote = "Só peixe morto vai com a correnteza."
                 Exit Select
             Case 872
-                Quote = "I hate it when people text me: ""Call Me"". I'm gonna start calling people and when they answer, I'm gonna say: ""text Me"", and hang up."
+                Quote = "Eu odeio quando me mandam mensagem: ""Me liga"". Vou começar a ligar… e quando atenderem, eu vou dizer: ""Me manda mensagem"" e desligar."
                 Exit Select
             Case 873
-                Quote = "My life feels like a test I didn't study for."
+                Quote = "Minha vida parece uma prova para a qual eu não estudei."
                 Exit Select
             Case 874
-                Quote = """be strong,"" I whispered to my wifi signal."
+                Quote = """Seja forte"", eu sussurrei para o meu sinal de wi-fi."
                 Exit Select
             Case 875
-                Quote = "Happiness is… not having to set the alarm for the next day."
+                Quote = "Felicidade é… não precisar colocar despertador para o dia seguinte."
                 Exit Select
             Case 876
-                Quote = "Don't mistake silence for weakness. Smart people don't plan big moves out loud."
+                Quote = "Não confunda silêncio com fraqueza. Gente inteligente não anuncia em voz alta os grandes movimentos."
                 Exit Select
             Case 877
-                Quote = "My soulmate is out there somewhere, pushing a pull door… I just know it."
+                Quote = "Minha alma gêmea deve estar por aí em algum lugar, empurrando uma porta de puxar… eu tenho certeza."
                 Exit Select
-            Case 878
-                Quote = "Don't give up on your dreams. Keep sleeping."
-                Exit Select
-            Case 879
-                Quote = "We are all a little broken. But the last time I checked, broken crayons still color the same."
-                Exit Select
+
             Case 880
-                Quote = "Life is short. Smile while you still have teeth."
+                Quote = "A vida é curta. Sorria enquanto ainda tem dentes."
                 Exit Select
             Case 881
-                Quote = "When you're stressed, you eat ice cream, cake, chocolate and sweets. Why? Because stressed spelled backwards is desserts."
+                Quote = "Quando você está estressado, você come sorvete, bolo, chocolate e doces. Por quê? Porque ""stressed"" ao contrário é ""desserts""."
                 Exit Select
             Case 882
-                Quote = "Defeat is not bitter unless you swallow it. - Joe Clark"
+                Quote = "A derrota não é amarga, a menos que você a engula. - Joe Clark"
                 Exit Select
             Case 883
-                Quote = "Keep the ones that heard you when you never said a word."
+                Quote = "Fique com quem te ouviu quando você não disse uma palavra."
                 Exit Select
             Case 884
-                Quote = "Ten years from now, make sure you can say that you chose your life. You didn't settle for it. - Mandy Hale"
+                Quote = "Daqui a dez anos, garanta que você possa dizer que escolheu sua vida. Que você não se conformou com ela. - Mandy Hale"
                 Exit Select
             Case 885
-                Quote = "Before I used to be afraid of being alone. Now, I'm afraid of having the wrong people as company."
+                Quote = "Antes eu tinha medo de ficar sozinho. Agora eu tenho medo de ter as pessoas erradas como companhia."
                 Exit Select
             Case 886
-                Quote = "Don't try to understand everything. Sometimes it is not meant to be understood, just accepted."
+                Quote = "Não tente entender tudo. Às vezes não é para ser entendido, apenas aceito."
                 Exit Select
             Case 887
-                Quote = "Everyone has a chapter they don't read out loud."
+                Quote = "Todo mundo tem um capítulo que não lê em voz alta."
                 Exit Select
             Case 888
-                Quote = "It's amazing how fast someone can become a stranger."
+                Quote = "É incrível como alguém pode virar um estranho tão rápido."
                 Exit Select
             Case 889
-                Quote = "It is not the length of life, but the depth."
+                Quote = "Não é o tamanho da vida, e sim a profundidade."
                 Exit Select
             Case 890
-                Quote = "Tears are words the heart can't say."
+                Quote = "Lágrimas são palavras que o coração não consegue dizer."
                 Exit Select
             Case 891
-                Quote = "Though I saw it coming, it still hurts."
+                Quote = "Mesmo eu vendo que ia acontecer, ainda dói."
                 Exit Select
             Case 892
-                Quote = "what if I fall? oh, my darling, what if you fly?"
+                Quote = "E se eu cair? Ah, meu bem… e se você voar?"
                 Exit Select
             Case 893
-                Quote = "Be comfortable being uncomfortable. Because one day, all this hard work will pay off."
+                Quote = "Fique bem com o desconforto. Porque um dia, todo esse esforço vai valer a pena."
                 Exit Select
             Case 894
-                Quote = "You don't have to see the whole staircase, just take the first step. - Martin Luther King"
+                Quote = "Você não precisa ver a escada inteira, apenas dê o primeiro passo. - Martin Luther King"
                 Exit Select
             Case 895
-                Quote = "Most of you don't want success as much as you want to sleep! – Eric Thomas"
+                Quote = "A maioria de vocês não quer sucesso tanto quanto quer dormir! - Eric Thomas"
                 Exit Select
             Case 896
-                Quote = "I like to think that one day you'll be an old man like me talkin' a young man's ear off explainin' to him how you took the sourest lemon that life has to offer and turned it into something resembling lemonade. - This is us"
+                Quote = "Gosto de pensar que um dia você vai ser um velho como eu, falando sem parar no ouvido de um jovem, explicando como você pegou o limão mais azedo que a vida ofereceu e transformou em algo que parecia limonada. - This Is Us"
                 Exit Select
             Case 897
-                Quote = "I didn't come this far to only come this far."
+                Quote = "Eu não cheguei até aqui só para chegar até aqui."
                 Exit Select
             Case 898
-                Quote = "Don't be afraid to fail. Be afraid not to try."
+                Quote = "Não tenha medo de fracassar. Tenha medo de não tentar."
                 Exit Select
             Case 899
-                Quote = "I'M NOT HERE TO BE AVERAGE. I'M HERE TO BE AWESOME."
+                Quote = "EU NÃO ESTOU AQUI PARA SER MEDIANO. EU ESTOU AQUI PARA SER INCRÍVEL."
                 Exit Select
             Case 900
-                Quote = "One day, I want to honestly say, ""I made it."""
+                Quote = "Um dia, eu quero dizer de verdade: ""Eu consegui."""
                 Exit Select
         End Select
 
@@ -6994,7 +7293,7 @@ Public Class Ribbon1
             .Value = begValue & "RD"
             .Font.Color = RGB(255, 0, 0)
             .Font.Name = "Times New Roman"
-            .Font.Size = 12
+            .Font.Size = 10
             .font.bold = True
         End With
     End Sub
@@ -7007,139 +7306,56 @@ Public Class Ribbon1
             .Value = begValue & "CB"
             .Font.Color = RGB(255, 0, 0)
             .Font.Name = "Times New Roman"
-            .Font.Size = 12
+            .Font.Size = 10
             .font.bold = True
         End With
     End Sub
 
-    Private Sub FS_Click(sender As Object, e As RibbonControlEventArgs) Handles FS.Click
-        Dim app As Excel.Application = Globals.ThisAddIn.Application
-        Dim sel As Excel.Range = TryCast(app.Selection, Excel.Range)
-        If sel Is Nothing Then Exit Sub
+    Private Sub TB_Click(sender As Object, e As RibbonControlEventArgs) Handles TB.Click
+        Dim appCell As Object = Globals.ThisAddIn.Application.ActiveCell
+        Dim begValue As String = appCell.Value
 
-        Dim ws As Excel.Worksheet = TryCast(app.ActiveSheet, Excel.Worksheet)
-        If ws Is Nothing Then Exit Sub
-
-        'Alvos (suporta seleção múltipla; mescladas viram topo-esquerda da MergeArea)
-        Dim targetCells As New List(Of Excel.Range)()
-        Dim keySet As New System.Collections.Generic.HashSet(Of String)(System.StringComparer.Ordinal)
-
-        Try
-            For Each area As Excel.Range In sel.Areas
-                For Each cellObj As Object In area.Cells
-                    Dim c As Excel.Range = TryCast(cellObj, Excel.Range)
-                    If c Is Nothing Then Continue For
-
-                    If CBool(c.MergeCells) Then
-                        c = c.MergeArea.Cells(1, 1)
-                    End If
-
-                    Dim addr As String = c.Address(RowAbsolute:=False, ColumnAbsolute:=False)
-                    Dim cellKey As String = "TM|FS|" & addr
-
-                    If keySet.Add(cellKey) Then
-                        targetCells.Add(c)
-                    End If
-                Next
-            Next
-        Catch
-            Exit Sub
-        End Try
-
-        If targetCells.Count = 0 Then Exit Sub
-
-        'Remove ticks antigos só das células selecionadas (varre uma vez)
-        Try
-            For i As Integer = ws.Shapes.Count To 1 Step -1
-                Try
-                    Dim shp As Excel.Shape = ws.Shapes.Item(i)
-                    If shp Is Nothing Then Continue For
-
-                    Dim tag As String = shp.AlternativeText
-                    If Not String.IsNullOrEmpty(tag) AndAlso keySet.Contains(tag) Then
-                        shp.Delete()
-                    End If
-                Catch
-                End Try
-            Next
-        Catch
-        End Try
-
-        Dim prevScreenUpdating As Boolean = app.ScreenUpdating
-        app.ScreenUpdating = False
-
-        Try
-            Const innerOffset As Double = 3.0R
-
-            For Each c As Excel.Range In targetCells
-                Dim addr As String = c.Address(RowAbsolute:=False, ColumnAbsolute:=False)
-                Dim cellKey As String = "TM|FS|" & addr
-
-                'Tamanho proporcional à altura e limitado pela largura da célula
-                'Mínimos ajustados para evitar cortar letras ("S" sumindo por falta de área útil)
-                Dim targetH As Double = Math.Max(12.0R, c.Height * 0.75R)
-                Dim maxW As Double = Math.Max(16.0R, c.Width * 0.45R)
-                Dim targetW As Double = Math.Min(maxW, Math.Max(18.0R, c.Width * 0.22R))
-
-                Dim box As Excel.Shape = ws.Shapes.AddTextbox(
-                Orientation:=Microsoft.Office.Core.MsoTextOrientation.msoTextOrientationHorizontal,
-                Left:=CSng(c.Left),
-                Top:=CSng(c.Top),
-                Width:=CSng(targetW),
-                Height:=CSng(targetH)
-            )
-
-                Try
-                    box.TextFrame.Characters.Text = "FS"
-                    box.TextFrame.HorizontalAlignment = Excel.XlHAlign.xlHAlignCenter
-                    box.TextFrame.VerticalAlignment = Excel.XlVAlign.xlVAlignCenter
-                    box.TextFrame.AutoSize = False
-
-                    'Zerar margens internas (evita “sumir o S” em caixas pequenas)
-                    Try
-                        box.TextFrame.MarginLeft = 0
-                        box.TextFrame.MarginRight = 0
-                        box.TextFrame.MarginTop = 0
-                        box.TextFrame.MarginBottom = 0
-                    Catch
-                    End Try
-
-                    'Evitar quebra de linha
-                    Try
-                        box.TextFrame.WordWrap = False
-                    Catch
-                    End Try
-
-                    box.TextFrame.Characters.Font.Bold = True
-                    box.TextFrame.Characters.Font.Color = RGB(255, 0, 0)
-                Catch
-                    'Se falhar o TextFrame, apaga e segue
-                    Try : box.Delete() : Catch : End Try
-                    Continue For
-                End Try
-
-                'Sem borda / sem preenchimento (fica “só a letra”)
-                Try : box.Line.Visible = Microsoft.Office.Core.MsoTriState.msoFalse : Catch : End Try
-                Try : box.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoFalse : Catch : End Try
-
-                'Tags + placement (para ClearAllShape remover)
-                Try : box.Placement = Excel.XlPlacement.xlMoveAndSize : Catch : End Try
-                Try : box.AlternativeText = cellKey : Catch : End Try
-                Try
-                    Dim safeAddr As String = addr.Replace("$", "").Replace(":", "_")
-                    box.Name = "TM_FS_" & safeAddr & "_" & Guid.NewGuid().ToString("N").Substring(0, 6)
-                Catch
-                End Try
-
-                'ESQUERDA + centro vertical (padrão estável)
-                box.Left = CSng(c.Left + innerOffset)
-                box.Top = CSng(c.Top + (c.Height - box.Height) / 2.0R)
-            Next
-
-        Finally
-            app.ScreenUpdating = prevScreenUpdating
-        End Try
+        With appCell
+            .Value = begValue & "TB"
+            .Font.Color = RGB(220, 65, 54)
+            .Font.Name = "Times New Roman"
+            .Font.Size = 10
+            .Font.Bold = True
+            .HorizontalAlignment = Excel.Constants.xlLeft
+            .VerticalAlignment = Excel.Constants.xlCenter
+        End With
     End Sub
+
+    Private Sub FS_Click(sender As Object, e As RibbonControlEventArgs) Handles FS.Click
+        Dim appCell As Object = Globals.ThisAddIn.Application.ActiveCell
+        Dim begValue As String = appCell.Value
+
+        With appCell
+            .Value = begValue & "FS"
+            .Font.Color = RGB(255, 0, 0)
+            .Font.Name = "Times New Roman"
+            .Font.Size = 10
+            .Font.Bold = True
+            .HorizontalAlignment = Excel.Constants.xlLeft
+            .VerticalAlignment = Excel.Constants.xlCenter
+        End With
+    End Sub
+
+    Private Sub GL_Click(sender As Object, e As RibbonControlEventArgs) Handles GL.Click
+        Dim appCell As Object = Globals.ThisAddIn.Application.ActiveCell
+        Dim begValue As String = appCell.Value
+
+        With appCell
+            .Value = begValue & "GL"
+            .Font.Color = RGB(255, 0, 0)
+            .Font.Name = "Times New Roman"
+            .Font.Size = 10
+            .Font.Bold = True
+            .HorizontalAlignment = Excel.Constants.xlLeft
+            .VerticalAlignment = Excel.Constants.xlCenter
+        End With
+    End Sub
+
     Private Sub Tick2_Click(sender As Object, e As RibbonControlEventArgs) Handles Tick2.Click
         Dim app As Excel.Application = Globals.ThisAddIn.Application
         Dim sel As Excel.Range = TryCast(app.Selection, Excel.Range)
@@ -7160,26 +7376,20 @@ Public Class Ribbon1
 
         Dim ratio As Double = CDbl(img.Width) / Math.Max(1.0R, CDbl(img.Height))
 
-        'Alvos (suporta seleção múltipla; mescladas viram topo-esquerda da MergeArea)
+        'Alvos (seleção múltipla; mescladas viram topo-esquerda)
         Dim targetCells As New List(Of Excel.Range)()
-        Dim keySet As New System.Collections.Generic.HashSet(Of String)(System.StringComparer.Ordinal)
+        Dim keySet As New HashSet(Of String)(StringComparer.Ordinal)
 
         Try
             For Each area As Excel.Range In sel.Areas
                 For Each cellObj As Object In area.Cells
                     Dim c As Excel.Range = TryCast(cellObj, Excel.Range)
                     If c Is Nothing Then Continue For
+                    If CBool(c.MergeCells) Then c = c.MergeArea.Cells(1, 1)
 
-                    If CBool(c.MergeCells) Then
-                        c = c.MergeArea.Cells(1, 1)
-                    End If
-
-                    Dim addr As String = c.Address(RowAbsolute:=False, ColumnAbsolute:=False)
+                    Dim addr As String = c.Address(False, False)
                     Dim cellKey As String = "TM|Tick2|" & addr
-
-                    If keySet.Add(cellKey) Then
-                        targetCells.Add(c)
-                    End If
+                    If keySet.Add(cellKey) Then targetCells.Add(c)
                 Next
             Next
         Catch
@@ -7188,29 +7398,37 @@ Public Class Ribbon1
 
         If targetCells.Count = 0 Then Exit Sub
 
-        'Remove ticks antigos só das células selecionadas (varre uma vez)
+        'Remover qualquer tick existente na célula (Tick, Tick2, X) – FS não é removido
         Try
-            For i As Integer = ws.Shapes.Count To 1 Step -1
-                Try
-                    Dim shp As Excel.Shape = ws.Shapes.Item(i)
-                    If shp Is Nothing Then Continue For
+            For Each c As Excel.Range In targetCells
+                For i As Integer = ws.Shapes.Count To 1 Step -1
+                    Try
+                        Dim shp As Excel.Shape = ws.Shapes.Item(i)
+                        If shp Is Nothing Then Continue For
 
-                    Dim tag As String = shp.AlternativeText
-                    If Not String.IsNullOrEmpty(tag) AndAlso keySet.Contains(tag) Then
-                        shp.Delete()
-                    End If
-                Catch
-                End Try
+                        Dim tag As String = ""
+                        Dim nm As String = ""
+                        Try : tag = shp.AlternativeText : Catch : End Try
+                        Try : nm = shp.Name : Catch : End Try
+
+                        'Apaga Tick, Tick2 ou X na célula
+                        If ((Not String.IsNullOrEmpty(tag) AndAlso
+                         (tag.StartsWith("TM|tick|") OrElse tag.StartsWith("TM|Tick2|") OrElse tag.StartsWith("TM|X|"))) _
+                        OrElse (Not String.IsNullOrEmpty(nm) AndAlso
+                                (nm.StartsWith("TM_tick_") OrElse nm.StartsWith("TM_Tick2_") OrElse nm.StartsWith("TM_X_")))) _
+                        AndAlso shp.TopLeftCell.Address(False, False) = c.Address(False, False) Then
+                            shp.Delete()
+                        End If
+                    Catch
+                    End Try
+                Next
             Next
         Catch
         End Try
 
-        'Salvar PNG temporário uma vez (reuso)
-        Dim tmpPath As String = System.IO.Path.Combine(
-        System.IO.Path.GetTempPath(),
-        "tickmark_tick2_" & Guid.NewGuid().ToString("N") & ".png"
-    )
-
+        'Salvar PNG temporário
+        Dim tmpPath As String = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                 "tickmark_tick2_" & Guid.NewGuid().ToString("N") & ".png")
         Try
             Try
                 img.Save(tmpPath, System.Drawing.Imaging.ImageFormat.Png)
@@ -7224,20 +7442,18 @@ Public Class Ribbon1
             app.ScreenUpdating = False
 
             Try
-                Const innerOffset As Double = 3.0R
+                Const innerOffset As Double = 0.5R
 
                 For Each c As Excel.Range In targetCells
-                    'Tamanho proporcional à altura
                     Dim targetH As Double = Math.Max(8.0R, c.Height * 0.75R)
                     Dim targetW As Double = targetH * ratio
-
                     Dim maxW As Double = Math.Max(8.0R, c.Width * 0.45R)
                     If targetW > maxW Then
                         targetW = maxW
                         targetH = targetW / ratio
                     End If
 
-                    Dim addr As String = c.Address(RowAbsolute:=False, ColumnAbsolute:=False)
+                    Dim addr As String = c.Address(False, False)
                     Dim cellKey As String = "TM|Tick2|" & addr
 
                     Dim pic As Excel.Shape = ws.Shapes.AddPicture(
@@ -7254,11 +7470,11 @@ Public Class Ribbon1
                     pic.Placement = Excel.XlPlacement.xlMoveAndSize
                     pic.AlternativeText = cellKey
                     Try
-                        Dim safeAddr As String = addr.Replace("$", "").Replace(":", "_")
-                        pic.Name = "TM_Tick2_" & safeAddr & "_" & Guid.NewGuid().ToString("N").Substring(0, 6)
+                        pic.Name = "TM_Tick2_" & addr.Replace("$", "").Replace(":", "_") & "_" & Guid.NewGuid().ToString("N").Substring(0, 6)
                     Catch
                     End Try
-                    'ESQUERDA + centro vertical (estável com redimensionamento)
+
+                    'ESQUERDA + centro vertical
                     pic.Left = CSng(c.Left + innerOffset)
                     pic.Top = CSng(c.Top + (c.Height - pic.Height) / 2.0R)
                 Next
@@ -7272,6 +7488,15 @@ Public Class Ribbon1
                 If System.IO.File.Exists(tmpPath) Then System.IO.File.Delete(tmpPath)
             Catch
             End Try
+        End Try
+        Try
+            ' Pega a última célula da seleção
+            Dim lastCell As Excel.Range = sel.Cells(sel.Cells.Count)
+            ' Move o cursor para a célula imediatamente abaixo
+            Dim nextCell As Excel.Range = lastCell.Offset(1, 0)
+            nextCell.Select()
+        Catch
+            ' Ignora qualquer erro (por exemplo, se estiver na última linha)
         End Try
     End Sub
 
@@ -7378,10 +7603,10 @@ Public Class Ribbon1
         Dim begValue As String = Globals.ThisAddIn.Application.ActiveCell.Value
 
         With appCell
-            .Value = begValue & "/Minor Pass/"
+            .Value = begValue & "/Desvio Menor/"
             .Font.Color = RGB(255, 0, 0)
-            .Font.Name = "Times New Roman"
-            .Font.Size = 12
+            .Font.Name = "Arial"
+            .Font.Size = 10
             .font.bold = True
         End With
     End Sub
@@ -7391,9 +7616,9 @@ Public Class Ribbon1
         Dim begValue As String = Globals.ThisAddIn.Application.ActiveCell.Value
 
         With appCell
-            .Value = begValue & "Conclusion:"
+            .Value = begValue & "Conclusão:"
             .Font.Color = RGB(255, 0, 0)
-            .Font.Name = "Times New Roman"
+            .Font.Name = "Arial"
             .Font.Size = 12
             .font.bold = True
             .HorizontalAlignment = Excel.Constants.xlRight
