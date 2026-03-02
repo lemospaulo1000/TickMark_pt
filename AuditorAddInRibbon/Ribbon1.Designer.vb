@@ -45,7 +45,6 @@
         Me.Tab1 = Me.Factory.CreateRibbonTab
         Me.Group10 = Me.Factory.CreateRibbonGroup
         Me.Group2 = Me.Factory.CreateRibbonGroup
-        Me.Separator2 = Me.Factory.CreateRibbonSeparator
         Me.Group9 = Me.Factory.CreateRibbonGroup
         Me.Group8 = Me.Factory.CreateRibbonGroup
         Me.Group17 = Me.Factory.CreateRibbonGroup
@@ -65,28 +64,26 @@
         Me.Group1 = Me.Factory.CreateRibbonGroup
         Me.Group13 = Me.Factory.CreateRibbonGroup
         Me.PBC = Me.Factory.CreateRibbonButton
-        Me.FontName1 = Me.Factory.CreateRibbonButton
-        Me.FontName2 = Me.Factory.CreateRibbonButton
-        Me.PMingLiU = Me.Factory.CreateRibbonButton
         Me.Calibri = Me.Factory.CreateRibbonButton
         Me.BookAntiqua = Me.Factory.CreateRibbonButton
         Me.Arial = Me.Factory.CreateRibbonButton
         Me.CapP = Me.Factory.CreateRibbonButton
-        Me.AJE = Me.Factory.CreateRibbonButton
-        Me.RJE = Me.Factory.CreateRibbonButton
-        Me.footed = Me.Factory.CreateRibbonButton
-        Me.btnCB = Me.Factory.CreateRibbonButton
-        Me.RD = Me.Factory.CreateRibbonButton
         Me.TB = Me.Factory.CreateRibbonButton
-        Me.FS = Me.Factory.CreateRibbonButton
         Me.NotMaterial = Me.Factory.CreateRibbonButton
-        Me.GL = Me.Factory.CreateRibbonButton
         Me.tick = Me.Factory.CreateRibbonButton
         Me.Tick2 = Me.Factory.CreateRibbonButton
-        Me.Tick3 = Me.Factory.CreateRibbonButton
         Me.X = Me.Factory.CreateRibbonButton
-        Me.Minor_Pass = Me.Factory.CreateRibbonButton
+        Me.Menu6 = Me.Factory.CreateRibbonMenu
+        Me.btnCB = Me.Factory.CreateRibbonButton
+        Me.Tick3 = Me.Factory.CreateRibbonButton
+        Me.RD = Me.Factory.CreateRibbonButton
+        Me.GL = Me.Factory.CreateRibbonButton
+        Me.footed = Me.Factory.CreateRibbonButton
+        Me.RJE = Me.Factory.CreateRibbonButton
+        Me.AJE = Me.Factory.CreateRibbonButton
+        Me.FS = Me.Factory.CreateRibbonButton
         Me.Conclusion = Me.Factory.CreateRibbonButton
+        Me.Minor_Pass = Me.Factory.CreateRibbonButton
         Me.star1 = Me.Factory.CreateRibbonButton
         Me.tri1 = Me.Factory.CreateRibbonButton
         Me.dia1 = Me.Factory.CreateRibbonButton
@@ -176,6 +173,10 @@
         Me.ClearAllShape = Me.Factory.CreateRibbonButton
         Me.Quote = Me.Factory.CreateRibbonButton
         Me.Copyright_ToggleButton = Me.Factory.CreateRibbonToggleButton
+        Me.Separator2 = Me.Factory.CreateRibbonSeparator
+        Me.PMingLiU = Me.Factory.CreateRibbonButton
+        Me.FontName2 = Me.Factory.CreateRibbonButton
+        Me.FontName1 = Me.Factory.CreateRibbonButton
         Me.Tab1.SuspendLayout()
         Me.Group10.SuspendLayout()
         Me.Group2.SuspendLayout()
@@ -234,34 +235,20 @@
         Me.Group2.Items.Add(Me.FontName2)
         Me.Group2.Items.Add(Me.PMingLiU)
         Me.Group2.Items.Add(Me.Separator2)
-        Me.Group2.Items.Add(Me.Calibri)
         Me.Group2.Items.Add(Me.BookAntiqua)
         Me.Group2.Items.Add(Me.Arial)
+        Me.Group2.Items.Add(Me.Calibri)
         Me.Group2.Label = "Nome da Fonte"
         Me.Group2.Name = "Group2"
         '
-        'Separator2
-        '
-        Me.Separator2.Name = "Separator2"
-        '
         'Group9
         '
-        Me.Group9.Items.Add(Me.CapP)
-        Me.Group9.Items.Add(Me.AJE)
-        Me.Group9.Items.Add(Me.RJE)
-        Me.Group9.Items.Add(Me.footed)
-        Me.Group9.Items.Add(Me.btnCB)
-        Me.Group9.Items.Add(Me.RD)
         Me.Group9.Items.Add(Me.TB)
-        Me.Group9.Items.Add(Me.FS)
         Me.Group9.Items.Add(Me.NotMaterial)
-        Me.Group9.Items.Add(Me.GL)
         Me.Group9.Items.Add(Me.tick)
         Me.Group9.Items.Add(Me.Tick2)
-        Me.Group9.Items.Add(Me.Tick3)
         Me.Group9.Items.Add(Me.X)
-        Me.Group9.Items.Add(Me.Minor_Pass)
-        Me.Group9.Items.Add(Me.Conclusion)
+        Me.Group9.Items.Add(Me.Menu6)
         Me.Group9.Label = "Working Paper"
         Me.Group9.Name = "Group9"
         '
@@ -423,34 +410,6 @@
         Me.PBC.ScreenTip = "Prepared by client"
         Me.PBC.ShowImage = True
         '
-        'FontName1
-        '
-        Me.FontName1.Image = CType(resources.GetObject("FontName1.Image"), System.Drawing.Image)
-        Me.FontName1.Label = "標楷體"
-        Me.FontName1.Name = "FontName1"
-        Me.FontName1.ScreenTip = "標楷體"
-        Me.FontName1.ShowImage = True
-        Me.FontName1.ShowLabel = False
-        Me.FontName1.Tag = ""
-        '
-        'FontName2
-        '
-        Me.FontName2.Image = CType(resources.GetObject("FontName2.Image"), System.Drawing.Image)
-        Me.FontName2.Label = "正黑體"
-        Me.FontName2.Name = "FontName2"
-        Me.FontName2.ScreenTip = "微軟正黑體"
-        Me.FontName2.ShowImage = True
-        Me.FontName2.ShowLabel = False
-        '
-        'PMingLiU
-        '
-        Me.PMingLiU.Image = CType(resources.GetObject("PMingLiU.Image"), System.Drawing.Image)
-        Me.PMingLiU.Label = "新細明"
-        Me.PMingLiU.Name = "PMingLiU"
-        Me.PMingLiU.ScreenTip = "新細明體"
-        Me.PMingLiU.ShowImage = True
-        Me.PMingLiU.ShowLabel = False
-        '
         'Calibri
         '
         Me.Calibri.Image = CType(resources.GetObject("Calibri.Image"), System.Drawing.Image)
@@ -487,58 +446,6 @@
         Me.CapP.ShowImage = True
         Me.CapP.ShowLabel = False
         '
-        'AJE
-        '
-        Me.AJE.Image = CType(resources.GetObject("AJE.Image"), System.Drawing.Image)
-        Me.AJE.Label = "AJE"
-        Me.AJE.Name = "AJE"
-        Me.AJE.ScreenTip = "Lançamento de ajuste proposto (Adjusting Journal Entry)"
-        Me.AJE.ShowImage = True
-        Me.AJE.ShowLabel = False
-        Me.AJE.SuperTip = resources.GetString("AJE.SuperTip")
-        '
-        'RJE
-        '
-        Me.RJE.Image = CType(resources.GetObject("RJE.Image"), System.Drawing.Image)
-        Me.RJE.Label = "RJE"
-        Me.RJE.Name = "RJE"
-        Me.RJE.ScreenTip = "Ajustes de reclassificação propostos (Reclassification Journal Entry)"
-        Me.RJE.ShowImage = True
-        Me.RJE.ShowLabel = False
-        Me.RJE.SuperTip = "Lançamento proposto pelo auditor para corrigir erro de classificação ou apresenta" &
-    "ção, sem alterar o resultado ou o patrimônio líquido"
-        '
-        'footed
-        '
-        Me.footed.Image = CType(resources.GetObject("footed.Image"), System.Drawing.Image)
-        Me.footed.Label = "f"
-        Me.footed.Name = "footed"
-        Me.footed.ScreenTip = "Total conferido (Footed)"
-        Me.footed.ShowImage = True
-        Me.footed.ShowLabel = False
-        Me.footed.SuperTip = resources.GetString("footed.SuperTip")
-        '
-        'btnCB
-        '
-        Me.btnCB.Image = CType(resources.GetObject("btnCB.Image"), System.Drawing.Image)
-        Me.btnCB.Label = "CB"
-        Me.btnCB.Name = "btnCB"
-        Me.btnCB.ScreenTip = "Confirmação externa (Confirmed Balance)"
-        Me.btnCB.ShowImage = True
-        Me.btnCB.ShowLabel = False
-        Me.btnCB.SuperTip = "Procedimento de confirmação externa com resposta obtida diretamente do terceiro, " &
-    "arquivada nos papéis de trabalho."
-        '
-        'RD
-        '
-        Me.RD.Image = CType(resources.GetObject("RD.Image"), System.Drawing.Image)
-        Me.RD.Label = "RD"
-        Me.RD.Name = "RD"
-        Me.RD.ScreenTip = "RD – Revisão de Documentação Suporte (Read and Documented)"
-        Me.RD.ShowImage = True
-        Me.RD.ShowLabel = False
-        Me.RD.SuperTip = resources.GetString("RD.SuperTip")
-        '
         'TB
         '
         Me.TB.Image = CType(resources.GetObject("TB.Image"), System.Drawing.Image)
@@ -550,16 +457,6 @@
         Me.TB.SuperTip = "Indica que o valor apresentado no papel de trabalho foi conciliado e está consist" &
     "ente com o balancete oficial da entidade."
         '
-        'FS
-        '
-        Me.FS.Image = CType(resources.GetObject("FS.Image"), System.Drawing.Image)
-        Me.FS.Label = "FS"
-        Me.FS.Name = "FS"
-        Me.FS.ScreenTip = "Saldo final levado para compor as demonstrações contábeis após ajustes (Forward t" &
-    "o Financial Statements)"
-        Me.FS.ShowImage = True
-        Me.FS.ShowLabel = False
-        '
         'NotMaterial
         '
         Me.NotMaterial.Image = CType(resources.GetObject("NotMaterial.Image"), System.Drawing.Image)
@@ -568,15 +465,6 @@
         Me.NotMaterial.ScreenTip = "Não material"
         Me.NotMaterial.ShowImage = True
         Me.NotMaterial.ShowLabel = False
-        '
-        'GL
-        '
-        Me.GL.Image = CType(resources.GetObject("GL.Image"), System.Drawing.Image)
-        Me.GL.Label = "GL"
-        Me.GL.Name = "GL"
-        Me.GL.ShowImage = True
-        Me.GL.ShowLabel = False
-        Me.GL.SuperTip = "Valor conciliado com o razão geral (agrees to General Ledger)."
         '
         'tick
         '
@@ -596,15 +484,6 @@
         Me.Tick2.ShowImage = True
         Me.Tick2.ShowLabel = False
         '
-        'Tick3
-        '
-        Me.Tick3.Image = CType(resources.GetObject("Tick3.Image"), System.Drawing.Image)
-        Me.Tick3.Label = "Tick3"
-        Me.Tick3.Name = "Tick3"
-        Me.Tick3.ScreenTip = "Agrees 3rd"
-        Me.Tick3.ShowImage = True
-        Me.Tick3.ShowLabel = False
-        '
         'X
         '
         Me.X.Image = CType(resources.GetObject("X.Image"), System.Drawing.Image)
@@ -614,14 +493,104 @@
         Me.X.ShowImage = True
         Me.X.ShowLabel = False
         '
-        'Minor_Pass
+        'Menu6
         '
-        Me.Minor_Pass.Image = CType(resources.GetObject("Minor_Pass.Image"), System.Drawing.Image)
-        Me.Minor_Pass.Label = "Minor Pass"
-        Me.Minor_Pass.Name = "Minor_Pass"
-        Me.Minor_Pass.ScreenTip = "Controle aprovado com pequena ressalva (Minor Pass)."
-        Me.Minor_Pass.ShowImage = True
-        Me.Minor_Pass.ShowLabel = False
+        Me.Menu6.Items.Add(Me.CapP)
+        Me.Menu6.Items.Add(Me.btnCB)
+        Me.Menu6.Items.Add(Me.Tick3)
+        Me.Menu6.Items.Add(Me.RD)
+        Me.Menu6.Items.Add(Me.GL)
+        Me.Menu6.Items.Add(Me.footed)
+        Me.Menu6.Items.Add(Me.RJE)
+        Me.Menu6.Items.Add(Me.AJE)
+        Me.Menu6.Items.Add(Me.FS)
+        Me.Menu6.Items.Add(Me.Conclusion)
+        Me.Menu6.Items.Add(Me.Minor_Pass)
+        Me.Menu6.Label = "Menu6"
+        Me.Menu6.Name = "Menu6"
+        Me.Menu6.OfficeImageId = "GroupAddInsMenuCommands"
+        Me.Menu6.ShowImage = True
+        Me.Menu6.ShowLabel = False
+        '
+        'btnCB
+        '
+        Me.btnCB.Image = CType(resources.GetObject("btnCB.Image"), System.Drawing.Image)
+        Me.btnCB.Label = "CB"
+        Me.btnCB.Name = "btnCB"
+        Me.btnCB.ScreenTip = "Confirmação externa (Confirmed Balance)"
+        Me.btnCB.ShowImage = True
+        Me.btnCB.ShowLabel = False
+        Me.btnCB.SuperTip = "Procedimento de confirmação externa com resposta obtida diretamente do terceiro, " &
+    "arquivada nos papéis de trabalho."
+        '
+        'Tick3
+        '
+        Me.Tick3.Image = CType(resources.GetObject("Tick3.Image"), System.Drawing.Image)
+        Me.Tick3.Label = "Tick3"
+        Me.Tick3.Name = "Tick3"
+        Me.Tick3.ScreenTip = "Agrees 3rd"
+        Me.Tick3.ShowImage = True
+        Me.Tick3.ShowLabel = False
+        '
+        'RD
+        '
+        Me.RD.Image = CType(resources.GetObject("RD.Image"), System.Drawing.Image)
+        Me.RD.Label = "RD"
+        Me.RD.Name = "RD"
+        Me.RD.ScreenTip = "RD – Revisão de Documentação Suporte (Read and Documented)"
+        Me.RD.ShowImage = True
+        Me.RD.ShowLabel = False
+        Me.RD.SuperTip = resources.GetString("RD.SuperTip")
+        '
+        'GL
+        '
+        Me.GL.Image = CType(resources.GetObject("GL.Image"), System.Drawing.Image)
+        Me.GL.Label = "GL"
+        Me.GL.Name = "GL"
+        Me.GL.ShowImage = True
+        Me.GL.ShowLabel = False
+        Me.GL.SuperTip = "Valor conciliado com o razão geral (agrees to General Ledger)."
+        '
+        'footed
+        '
+        Me.footed.Image = CType(resources.GetObject("footed.Image"), System.Drawing.Image)
+        Me.footed.Label = "f"
+        Me.footed.Name = "footed"
+        Me.footed.ScreenTip = "Total conferido (Footed)"
+        Me.footed.ShowImage = True
+        Me.footed.ShowLabel = False
+        Me.footed.SuperTip = resources.GetString("footed.SuperTip")
+        '
+        'RJE
+        '
+        Me.RJE.Image = CType(resources.GetObject("RJE.Image"), System.Drawing.Image)
+        Me.RJE.Label = "RJE"
+        Me.RJE.Name = "RJE"
+        Me.RJE.ScreenTip = "Ajustes de reclassificação propostos (Reclassification Journal Entry)"
+        Me.RJE.ShowImage = True
+        Me.RJE.ShowLabel = False
+        Me.RJE.SuperTip = "Lançamento proposto pelo auditor para corrigir erro de classificação ou apresenta" &
+    "ção, sem alterar o resultado ou o patrimônio líquido"
+        '
+        'AJE
+        '
+        Me.AJE.Image = CType(resources.GetObject("AJE.Image"), System.Drawing.Image)
+        Me.AJE.Label = "AJE"
+        Me.AJE.Name = "AJE"
+        Me.AJE.ScreenTip = "Lançamento de ajuste proposto (Adjusting Journal Entry)"
+        Me.AJE.ShowImage = True
+        Me.AJE.ShowLabel = False
+        Me.AJE.SuperTip = resources.GetString("AJE.SuperTip")
+        '
+        'FS
+        '
+        Me.FS.Image = CType(resources.GetObject("FS.Image"), System.Drawing.Image)
+        Me.FS.Label = "FS"
+        Me.FS.Name = "FS"
+        Me.FS.ScreenTip = "Saldo final levado para compor as demonstrações contábeis após ajustes (Forward t" &
+    "o Financial Statements)"
+        Me.FS.ShowImage = True
+        Me.FS.ShowLabel = False
         '
         'Conclusion
         '
@@ -631,6 +600,15 @@
         Me.Conclusion.ScreenTip = "Conclusão"
         Me.Conclusion.ShowImage = True
         Me.Conclusion.ShowLabel = False
+        '
+        'Minor_Pass
+        '
+        Me.Minor_Pass.Image = CType(resources.GetObject("Minor_Pass.Image"), System.Drawing.Image)
+        Me.Minor_Pass.Label = "Minor Pass"
+        Me.Minor_Pass.Name = "Minor_Pass"
+        Me.Minor_Pass.ScreenTip = "Controle aprovado com pequena ressalva (Minor Pass)."
+        Me.Minor_Pass.ShowImage = True
+        Me.Minor_Pass.ShowLabel = False
         '
         'star1
         '
@@ -794,7 +772,7 @@
         Me.Menu2.Items.Add(Me.omega)
         Me.Menu2.Label = "Others"
         Me.Menu2.Name = "Menu2"
-        Me.Menu2.ScreenTip = "Others"
+        Me.Menu2.ScreenTip = "Outros"
         Me.Menu2.ShowImage = True
         Me.Menu2.ShowLabel = False
         '
@@ -1450,6 +1428,29 @@
         Me.Copyright_ToggleButton.ScreenTip = "Copyright"
         Me.Copyright_ToggleButton.ShowImage = True
         '
+        'Separator2
+        '
+        Me.Separator2.Name = "Separator2"
+        '
+        'PMingLiU
+        '
+        Me.PMingLiU.Image = CType(resources.GetObject("PMingLiU.Image"), System.Drawing.Image)
+        Me.PMingLiU.Label = "Calibri"
+        Me.PMingLiU.Name = "PMingLiU"
+        '
+        'FontName2
+        '
+        Me.FontName2.Image = CType(resources.GetObject("FontName2.Image"), System.Drawing.Image)
+        Me.FontName2.Label = "Arial"
+        Me.FontName2.Name = "FontName2"
+        '
+        'FontName1
+        '
+        Me.FontName1.Label = "Book Antiqua"
+        Me.FontName1.Name = "FontName1"
+        Me.FontName1.ScreenTip = "標楷體"
+        Me.FontName1.Tag = ""
+        '
         'Ribbon1
         '
         Me.Name = "Ribbon1"
@@ -1502,8 +1503,6 @@
     Friend WithEvents Tab1 As Microsoft.Office.Tools.Ribbon.RibbonTab
     Friend WithEvents CapP As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents Group2 As Microsoft.Office.Tools.Ribbon.RibbonGroup
-    Friend WithEvents FontName1 As Microsoft.Office.Tools.Ribbon.RibbonButton
-    Friend WithEvents FontName2 As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents PBC As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents Group3 As Microsoft.Office.Tools.Ribbon.RibbonGroup
     Friend WithEvents CheckBox As Microsoft.Office.Tools.Ribbon.RibbonButton
@@ -1578,7 +1577,6 @@
     Friend WithEvents LeftBrace As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents DownApply As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents RightApply As Microsoft.Office.Tools.Ribbon.RibbonButton
-    Friend WithEvents PMingLiU As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents Arial As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents BookAntiqua As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents Calibri As Microsoft.Office.Tools.Ribbon.RibbonButton
@@ -1600,7 +1598,6 @@
     Friend WithEvents omega As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents Menu2 As Microsoft.Office.Tools.Ribbon.RibbonMenu
     Friend WithEvents Separator1 As Microsoft.Office.Tools.Ribbon.RibbonSeparator
-    Friend WithEvents Separator2 As Microsoft.Office.Tools.Ribbon.RibbonSeparator
     Friend WithEvents Roman_numerals As Microsoft.Office.Tools.Ribbon.RibbonGroup
     Friend WithEvents one As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents two As Microsoft.Office.Tools.Ribbon.RibbonButton
@@ -1633,6 +1630,11 @@
     Friend WithEvents ArrowBox As Microsoft.Office.Tools.Ribbon.RibbonButton
     Friend WithEvents Menu5 As Microsoft.Office.Tools.Ribbon.RibbonMenu
     Friend WithEvents GL As Microsoft.Office.Tools.Ribbon.RibbonButton
+    Friend WithEvents Menu6 As Microsoft.Office.Tools.Ribbon.RibbonMenu
+    Friend WithEvents FontName1 As Microsoft.Office.Tools.Ribbon.RibbonButton
+    Friend WithEvents FontName2 As Microsoft.Office.Tools.Ribbon.RibbonButton
+    Friend WithEvents PMingLiU As Microsoft.Office.Tools.Ribbon.RibbonButton
+    Friend WithEvents Separator2 As Microsoft.Office.Tools.Ribbon.RibbonSeparator
 End Class
 
 Partial Class ThisRibbonCollection
