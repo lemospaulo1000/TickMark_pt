@@ -16,6 +16,10 @@ Desenvolvimento ativo no branch: `feature/tick2-image`.
 
 O instalador (MSI) será disponibilizado nas Releases deste repositório quando estiver pronto.
 
+## Download
+
+👉 [Baixar última versão](https://github.com/lemospaulo1000/TickMark_pt/releases/latest)
+
 
 
 \## Uso
